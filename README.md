@@ -5,6 +5,14 @@ horaires (avec frise de la journée), rider, locations backline / lumière / mac
 (loueur, devis, facture, pièces jointes), 4 contacts et commentaires.
 Export Word dans la mise en page d'origine (`public/fiche-template.docx`).
 
+## Lire un devis
+
+Dans une location, quand le devis joint est un PDF, le bouton **Lire le devis** le lit dans le navigateur
+(`public/devis-reader.js` + pdf.js dans `public/vendor/pdfjs`, rien n'est envoyé ailleurs) et propose de remplir
+ce qui est vide : loueur, n° et montant du devis, statut « Reçu », et les lignes de matériel absentes de la liste
+(le transport est ignoré). **Annuler** remet la fiche comme avant. Ne marche pas sur les scans ni les photos.
+`devis-reader.js` est une copie de celui du projet *suivi-devis* : une amélioration se recopie dans les deux.
+
 ## Structure
 
 - `public/index.html` : la page (aucune étape de build)

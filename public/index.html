@@ -51,6 +51,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .brand small { font: 500 12px var(--mono); letter-spacing: 0; text-transform: none; color: var(--muted); }
 .btn { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 7px 14px; cursor: pointer; font-weight: 500; white-space: nowrap; }
 .btn:hover { border-color: var(--muted); }
+.btn.sm { padding: 4px 10px; font-size: 13px; min-height: 0; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn.danger { color: var(--danger); }
@@ -212,6 +213,12 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .attach .linkbtn { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; text-decoration: underline; font-size: 13px; }
 .attach .linkbtn:hover { color: var(--ink); }
 .attach .busy { color: var(--muted); }
+/* Lire le devis : ce qui sera rempli, puis Remplir / Annuler */
+.readbox { border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--r); padding: 10px 12px; font-size: 13px; display: grid; gap: 6px; background: var(--surface); }
+.readbox ul { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+.readbox .ok { color: var(--muted); }
+.readbox .bad { color: var(--danger); }
+.readbox .acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .subtle { color: var(--muted); font-size: 13px; }
 
 .contact { display: grid; gap: 10px; }
@@ -243,6 +250,7 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="/devis-reader.js"></script>
 <script>
 (() => {
 "use strict";
@@ -531,6 +539,7 @@ function renderSheet(id) {
         <div class="docline"><label class="f"><span>Devis</span><input data-path="loc.${l.k}.devis.ref" placeholder="N° ou montant"></label>
           <label class="f"><span>Statut</span><select data-path="loc.${l.k}.devis.statut">${DEVIS_ST.map(s => `<option value="${s}">${s || "—"}</option>`).join("")}</select></label></div>
         ${attachHtml("loc." + l.k + ".devis.file", "Joindre le devis")}
+        <div class="readbox" data-readbox="${l.k}" hidden></div>
         <div class="docline"><label class="f"><span>Facture</span><input data-path="loc.${l.k}.facture.ref" placeholder="N° ou montant"></label>
           <label class="f"><span>Statut</span><select data-path="loc.${l.k}.facture.statut">${FACT_ST.map(s => `<option value="${s}">${s || "—"}</option>`).join("")}</select></label></div>
         ${attachHtml("loc." + l.k + ".facture.file", "Joindre la facture")}
@@ -824,7 +833,9 @@ function renderAttach(el, d) {
   if (el.dataset.busy) return;
   if (f && (f.path || f.url)) {
     const href = f.path ? "/api/file?p=" + encodeURIComponent(f.path) : f.url;
-    el.innerHTML = `<a href="${esc(href)}" target="_blank" rel="noopener">📎 ${esc(f.name || "Pièce jointe")}</a>${canWrite ? `<button type="button" class="linkbtn" data-rm>retirer</button>` : ""}`;
+    const canRead = canWrite && f.path && /\.devis\.file$/.test(path) && /\.pdf$/i.test(f.name || f.path);
+    el.innerHTML = `<a href="${esc(href)}" target="_blank" rel="noopener">📎 ${esc(f.name || "Pièce jointe")}</a>${canRead ? `<button type="button" class="btn sm" data-read>Lire le devis</button>` : ""}${canWrite ? `<button type="button" class="linkbtn" data-rm>retirer</button>` : ""}`;
+    const rd = el.querySelector("[data-read]"); if (rd) rd.onclick = () => readDevis(path.split(".")[1], f);
     const rm = el.querySelector("[data-rm]"); if (rm) rm.onclick = () => { edit(path, null); flush(); renderAttach(el, localDoc()); };
   } else if (canWrite) {
     el.innerHTML = `<button type="button" class="linkbtn" data-up>+ ${esc(el.dataset.label)} (PDF, image, 4 Mo max)</button><input type="file" accept="application/pdf,image/*" hidden>`;
@@ -833,6 +844,77 @@ function renderAttach(el, d) {
   } else {
     el.innerHTML = `<span class="subtle">Pas de pièce jointe</span>`;
   }
+}
+
+// ---------- Lire le devis (PDF) et remplir la location ----------
+// Lecture dans le navigateur (public/devis-reader.js + pdf.js) : le PDF n'est envoyé nulle part.
+// Remplit seulement ce qui est vide (loueur, devis, statut) et ajoute les lignes de matériel absentes.
+const RE_TRANSPORT = /\b(transport|livraison|enl[eè]vement|frais\s+de\s+port|d[ée]placement|a\/r)\b/i;
+const keyOf = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const euro = (n) => n == null ? "" : n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " € HT";
+async function readDevis(k, f) {
+  const box = app.querySelector(`[data-readbox="${k}"]`); if (!box) return;
+  box.hidden = false; box.innerHTML = `<span class="ok">Lecture du devis…</span>`;
+  let r;
+  try {
+    const res = await fetch("/api/file?p=" + encodeURIComponent(f.path), { credentials: "same-origin" });
+    if (res.status === 401) { showLogin(); return; }
+    if (!res.ok) throw new Error("file");
+    const loueurs = new Set(); events.forEach(e => LOCS.forEach(l => { const v = get(e, "loc." + l.k + ".loueur"); if (v) loueurs.add(v.trim()); }));
+    r = await window.DevisReader.read(new Uint8Array(await res.arrayBuffer()), { knownSuppliers: [...loueurs] });
+  } catch (e) {
+    box.innerHTML = `<span class="bad">Impossible de lire ce PDF.</span> <button type="button" class="linkbtn" data-close>Fermer</button>`;
+    box.querySelector("[data-close]").onclick = () => box.hidden = true; return;
+  }
+  if (!r.hasText) {
+    box.innerHTML = `<span class="bad">Ce PDF ne contient pas de texte (scan ou photo) : il faut remplir à la main.</span> <button type="button" class="linkbtn" data-close>Fermer</button>`;
+    box.querySelector("[data-close]").onclick = () => box.hidden = true; return;
+  }
+  const d = localDoc(), L = get(d, "loc." + k) || {};
+  const have = new Set(itemsOf(L).map(it => keyOf(it.des)));
+  const arts = (r.articles && r.articles.length ? r.articles : r.lignes.map(t => { const m = /^(\d+(?:,\d+)?)\s+(.*)$/.exec(t); return m ? { q: parseFloat(m[1].replace(",", ".")), d: m[2] } : { q: 1, d: t }; }));
+  // « 1x Rallonge P17 » : the quantity is written in the designation
+  arts.forEach(a => { const m = /^(\d+(?:[.,]\d+)?)\s*[x×*]\s*(\S.*)$/i.exec(a.d || ""); if (m) { a.q = parseFloat(m[1].replace(",", ".")); a.d = m[2]; } });
+  const transport = arts.filter(a => RE_TRANSPORT.test(a.d));
+  const items = arts.filter(a => !RE_TRANSPORT.test(a.d) && a.d && !have.has(keyOf(a.d)));
+  const dup = arts.length - transport.length - items.length;
+  const devisTxt = [r.ref ? "N° " + r.ref : "", euro(r.totalHT)].filter(Boolean).join(" · ");
+  const plan = [];
+  if (r.fournisseur) plan.push(L.loueur ? `Loueur : déjà rempli (${esc(L.loueur)})` : `Loueur : <b>${esc(r.fournisseur)}</b>`);
+  if (devisTxt) plan.push(get(L, "devis.ref") ? `Devis : déjà rempli (${esc(get(L, "devis.ref"))})` : `Devis : <b>${esc(devisTxt)}</b>`);
+  if (!get(L, "devis.statut")) plan.push(`Statut du devis : <b>Reçu</b>`);
+  plan.push(items.length ? `Matériel : <b>${items.length} ligne${items.length > 1 ? "s" : ""}</b> à ajouter${dup ? ` (${dup} déjà dans la liste)` : ""}${transport.length ? ` · transport ignoré` : ""}` : `Matériel : rien de nouveau${dup ? ` (${dup} ligne${dup > 1 ? "s" : ""} déjà dans la liste)` : ""}`);
+  box.innerHTML = `<div>Lu dans le devis${r.fournisseur ? " de <b>" + esc(r.fournisseur) + "</b>" : ""} :</div><ul>${plan.map(p => `<li>${p}</li>`).join("")}</ul>
+    ${items.length ? `<details><summary class="ok">Voir les lignes</summary><ul>${items.map(a => `<li>${esc(a.q != null ? String(a.q).replace(".", ",") + " × " : "")}${esc(a.d)}</li>`).join("")}</ul></details>` : ""}
+    <div class="acts"><button type="button" class="btn primary sm" data-fill>Remplir la fiche</button><button type="button" class="btn sm" data-close>Fermer</button></div>`;
+  box.querySelector("[data-close]").onclick = () => box.hidden = true;
+  box.querySelector("[data-fill]").onclick = () => {
+    const undo = [];
+    const set = (p, v) => { undo.push([p, get(localDoc(), p) ?? ""]); edit(p, v); };
+    const P = "loc." + k;
+    if (r.fournisseur && !L.loueur) set(P + ".loueur", r.fournisseur);
+    if (devisTxt && !get(L, "devis.ref")) set(P + ".devis.ref", devisTxt);
+    if (!get(L, "devis.statut")) set(P + ".devis.statut", "Reçu");
+    if (k !== "autre" && L.actif !== "oui") set(P + ".actif", "oui");
+    const lineup = lineupOf(d), who = lineup.length === 1 ? { [lineup[0].id]: true } : {};
+    const t0 = Date.now(), added = [];
+    items.forEach((a, i) => {
+      const iid = "m" + newId().slice(0, 9);
+      const q = a.q != null && a.q > 0 ? String(Math.round(a.q * 100) / 100) : "1";
+      edit(`${P}.items.${iid}`, { qte: q, des: a.d, ref: "", who, rendu: false, createdAt: t0 + i });
+      added.push(`${P}.items.${iid}`);
+    });
+    flush(); syncSheet(current);
+    box.innerHTML = `<span>Fiche remplie${added.length ? ` · ${added.length} ligne${added.length > 1 ? "s" : ""} de matériel ajoutée${added.length > 1 ? "s" : ""}` : ""}.</span>
+      <div class="acts"><button type="button" class="btn sm" data-undo>Annuler</button><button type="button" class="btn sm" data-close>Fermer</button></div>`;
+    box.querySelector("[data-close]").onclick = () => box.hidden = true;
+    box.querySelector("[data-undo]").onclick = () => {
+      undo.forEach(([p, v]) => edit(p, v)); added.forEach(p => edit(p, null));
+      flush(); syncSheet(current);
+      box.innerHTML = `<span class="ok">Annulé : la fiche est revenue comme avant.</span> <button type="button" class="linkbtn" data-close>Fermer</button>`;
+      box.querySelector("[data-close]").onclick = () => box.hidden = true;
+    };
+  };
 }
 
 async function upload(el, path, file) {
