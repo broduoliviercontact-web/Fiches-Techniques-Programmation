@@ -166,8 +166,14 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .add-item { justify-self: start; }
 .artmat { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
 .artmat b { font-weight: 600; color: var(--ink); }
-.communmat { font-size: 13px; color: var(--muted); }
-.communmat b { color: var(--ink); }
+.communmat { margin-top: 14px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); font-size: 13px; }
+.communmat summary { cursor: pointer; padding: 8px 12px; font: 600 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.communmat summary b { color: var(--ink); font-weight: 600; }
+.communmat .cm-body { padding: 0 12px 10px; display: grid; gap: 10px; }
+.communmat h5 { margin: 0 0 4px; font: 700 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink); }
+.communmat ul { margin: 0; padding: 0; list-style: none; columns: 3 220px; column-gap: 20px; }
+.communmat li { break-inside: avoid; padding: 1px 0; color: var(--muted); }
+.communmat li span { font-family: var(--mono); color: var(--ink); }
 .frise .track.arts, .frise .track.moms { height: 26px; margin-top: 4px; background: transparent; overflow: visible; }
 .frise .track.arts .seg, .frise .track.moms .seg { border-radius: 3px; border-right: 0; box-shadow: 0 0 0 1px var(--surface); }
 .frise button.seg { border-top: 0; border-bottom: 0; border-left: 0; cursor: pointer; text-align: left; }
@@ -593,7 +599,6 @@ function renderSheet(id) {
       <div class="panel fields">
         <div class="f"><span>Line-up</span>
           <div class="lineup" id="lineup"></div>
-          <div class="communmat" id="communmat"></div>
           ${canWrite ? `<button type="button" class="btn add-art" id="add-art">+ Ajouter un artiste</button>` : ""}
         </div>
         <div class="horaires">
@@ -615,6 +620,7 @@ function renderSheet(id) {
         </div>
         <div class="frise" id="frise"></div>
         <div class="fedit" id="frise-edit" hidden></div>
+        <details class="communmat" id="communmat" hidden></details>
       </div>
     </section>
 
@@ -763,7 +769,18 @@ function syncItems(d) {
   LOCS.forEach(l => itemsOf(get(d, "loc." + l.k)).forEach(it => whoOf(it).forEach(w => { ((byWho[w] = byWho[w] || {})[l.t] = byWho[w][l.t] || []).push(itemLabel(it)); })));
   const fmt = m => Object.entries(m).map(([t, xs]) => `<b>${esc(t)}</b> : ${xs.map(esc).join(", ")}`).join(" · ");
   arts.forEach(a => { const el = app.querySelector(`[data-artmat="${a.id}"]`); if (el) el.innerHTML = byWho[a.id] ? "Matériel loué : " + fmt(byWho[a.id]) : ""; });
-  const cm = $("#communmat"); if (cm) cm.innerHTML = byWho.commun ? "Matériel commun : " + fmt(byWho.commun) : "";
+  const cm = $("#communmat");
+  if (cm) {
+    const groups = {};
+    LOCS.forEach(l => itemsOf(get(d, "loc." + l.k)).forEach(it => { if (it.who && it.who.commun) (groups[l.t] = groups[l.t] || []).push(it); }));
+    const n = Object.values(groups).reduce((a, x) => a + x.length, 0);
+    cm.hidden = !n;
+    if (n) {
+      const html = `<summary>Matériel commun <b>· ${n} ligne${n > 1 ? "s" : ""}</b></summary><div class="cm-body">` +
+        Object.entries(groups).map(([t, xs]) => `<div><h5>${esc(t)}</h5><ul>${xs.map(it => `<li><span>${esc(it.qte || "1")}×</span> ${esc(it.des || "Matériel")}</li>`).join("")}</ul></div>`).join("") + `</div>`;
+      const open = cm.open; if (cm.dataset.html !== html) { cm.innerHTML = html; cm.dataset.html = html; cm.open = open; }
+    }
+  }
 }
 function addItem(k) {
   const iid = "m" + newId().slice(0, 9);
