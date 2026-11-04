@@ -188,6 +188,14 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .frise .pin.sel { text-decoration: underline; }
 .frise .hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .fedit { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.fedit .sw { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.fedit .sw span { font: 600 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
+.fedit .sw button { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+.fedit .sw button.on { border-color: var(--ink); }
+.fedit .sw button.def { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); font: 600 13px var(--body); color: var(--muted); }
+.fedit .fe-act { display: flex; gap: 8px; margin-left: auto; }
+.fedit .btn.danger.armed { background: var(--danger); color: var(--surface); border-color: var(--danger); }
+.frise .seg.custom { color: #fff; }
 .fedit h4 { margin: 0; flex-basis: 100%; font: 700 14px var(--display); letter-spacing: .1em; text-transform: uppercase; }
 .fedit label { display: grid; gap: 4px; font: 600 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .fedit input { border: 1px solid var(--line); background: var(--surface); border-radius: 4px; padding: 6px 8px; font-family: var(--mono); }
@@ -363,7 +371,7 @@ function showMins(e) {
   lineupOf(e).forEach(a => { const x = artMins(a.debut, rel), d = setMins(a); if (x == null || d == null) return; lo = lo == null ? x : Math.min(lo, x); hi = hi == null ? x + d : Math.max(hi, x + d); });
   return lo == null ? null : hi - lo;
 }
-const MOM_TYPES = ["Arrivée équipe", "Arrivée artiste", "Repas midi", "Repas soir", "Catering", "Changement de plateau", "Curfew", "Autre"];
+const MOM_TYPES = ["Arrivée équipe", "Arrivée artiste", "Repas midi", "Repas soir", "Catering", "Pause", "Changement de plateau", "Curfew", "Autre"];
 function momentsOf(e) {
   const rel = relOf(e);
   return Object.entries(e.moments || {}).filter(([, m]) => m).map(([id, m]) => ({ id, ...m }))
@@ -374,8 +382,8 @@ function planning(e) {
   const t = mainTimes(e), rel = relOf(e);
   const span = (x, y) => { const a = rel(mins(x)); let b = rel(mins(y)); if (a != null && b != null && b <= a) b += 1440; return [a, b]; };
   const arts = lineupOf(e);
-  const sets = arts.map((x, i) => { const [a, b] = span(x.debut, x.fin); return { id: x.id, nom: x.nom || "Artiste", i, a, b }; }).filter(x => x.a != null && x.b != null).sort((x, y) => x.a - y.a);
-  const bals = arts.filter(x => x.balance === "oui").map((x, i) => { const [a, b] = span(x.bdebut, x.bfin); return { id: x.id, nom: x.nom || "Artiste", i: arts.indexOf(x), a, b }; }).filter(x => x.a != null && x.b != null);
+  const sets = arts.map((x, i) => { const [a, b] = span(x.debut, x.fin); return { id: x.id, nom: x.nom || "Artiste", i, a, b, color: x.color || "" }; }).filter(x => x.a != null && x.b != null).sort((x, y) => x.a - y.a);
+  const bals = arts.filter(x => x.balance === "oui").map((x, i) => { const [a, b] = span(x.bdebut, x.bfin); return { id: x.id, nom: x.nom || "Artiste", i: arts.indexOf(x), a, b, color: x.color || "" }; }).filter(x => x.a != null && x.b != null);
   const moms = momentsOf(e).map(m => { const [a, b] = span(m.debut, m.fin); return { ...m, a, b }; }).filter(m => m.a != null);
   const gaps = [], issues = [];
   for (let k = 1; k < sets.length; k++) {
@@ -661,6 +669,13 @@ function renderSheet(id) {
     const fe = ev.target.closest("[data-edit]");
     if (fe) { drawFrise.sel = drawFrise.sel === fe.dataset.edit ? null : fe.dataset.edit; drawFrise(); const first = $("#frise-edit input"); if (first && canWrite) first.focus(); return; }
     if (ev.target.closest("[data-close-edit]")) { drawFrise.sel = null; drawFrise(); return; }
+    const sw = ev.target.closest("[data-color]");
+    if (sw && canWrite) { const [p, c] = sw.dataset.color.split("|"); edit(p, c); flush(); drawFrise(); return; }
+    const ds = ev.target.closest("[data-del-slot]");
+    if (ds && canWrite) {
+      if (!ds.classList.contains("armed")) { ds.classList.add("armed"); ds.textContent = "Confirmer la suppression"; setTimeout(() => { if (ds.isConnected) { ds.classList.remove("armed"); ds.textContent = "Supprimer"; } }, 3000); return; }
+      deleteSlot(ds.dataset.delSlot); return;
+    }
     if (!canWrite) return;
     if (ev.target.closest("#add-art")) return addArtist();
     if (ev.target.closest("#add-mom")) return addMoment();
@@ -1041,7 +1056,8 @@ function drawFrise() {
   if (t.ouverture != null) { const zEnd = t.fermPublic ?? t.fermPortes; if (zEnd != null && zEnd > t.ouverture) html += `<div class="zone" style="left:${pct(t.ouverture)};width:calc(${pct(zEnd)} - ${pct(t.ouverture)})" title="Public sur site"></div>`; }
   for (let v = lo; v <= hi; v += 30) html += `<i class="${v % 60 ? "half" : ""}" style="left:${pct(v)}"></i>`;
   html += `</div><div class="track">`;
-  main.forEach(([k, lab, c, a, b]) => html += seg(k, lab, "", a, b, `background:var(${c})`));
+  const custom = doc.colors || {};
+  main.forEach(([k, lab, c, a, b]) => { const cc = custom[k.split(":")[1]]; html += seg(k, lab, cc ? "custom" : "", a, b, `background:${cc || `var(${c})`}`); });
   if (P.sets.length) {
     const a = Math.min(...P.sets.map(x => x.a)), b = Math.max(...P.sets.map(x => x.b));
     html += `<div class="seg derived" style="left:${pct(a)};width:calc(${pct(b)} - ${pct(a)});background:var(--seg-show)" title="Show · ${hm(a)} – ${hm(b)} · calculé depuis le line-up">Show</div>`;
@@ -1052,8 +1068,8 @@ function drawFrise() {
   const artColor = i => `var(${i % 2 ? "--art-b" : "--art-a"})`;
   if (P.sets.length || P.bals.length) {
     html += `<div class="track arts">`;
-    P.bals.forEach(x => html += seg("bal:" + x.id, "Balance " + x.nom + (x.warn ? " · public présent" : ""), "bal" + (x.warn ? " warn" : ""), x.a, x.b, `background-color:${artColor(x.i)}`));
-    P.sets.forEach(x => html += seg("set:" + x.id, x.nom + (x.conflict ? " · chevauchement" : x.late ? " · après fermeture" : ""), x.conflict || x.late ? "warn" : "", x.a, x.b, `background-color:${artColor(x.i)}`));
+    P.bals.forEach(x => html += seg("bal:" + x.id, "Balance " + x.nom + (x.warn ? " · public présent" : ""), "bal" + (x.warn ? " warn" : "") + (x.color ? " custom" : ""), x.a, x.b, `background-color:${x.color || artColor(x.i)}`));
+    P.sets.forEach(x => html += seg("set:" + x.id, x.nom + (x.conflict ? " · chevauchement" : x.late ? " · après fermeture" : ""), (x.conflict || x.late ? "warn" : "") + (x.color ? " custom" : ""), x.a, x.b, `background-color:${x.color || artColor(x.i)}`));
     html += `</div>`;
     if (P.gaps.length) html += `<div class="gaps">` + P.gaps.map(g => `<span class="gap" style="left:${pct((g.a + g.b) / 2)}" title="Changement de plateau">↔ ${fmtDur(g.b - g.a)}</span>`).join("") + `</div>`;
   }
@@ -1061,8 +1077,8 @@ function drawFrise() {
     html += `<div class="track moms">`;
     P.moms.forEach(m => {
       const lab = (m.type || "Moment") + (m.label ? " · " + m.label : "");
-      html += m.b != null ? seg("mom:" + m.id, lab, "mom", m.a, m.b, "")
-        : `<button type="button" class="pin${sel === "mom:" + m.id ? " sel" : ""}" data-edit="mom:${m.id}" style="left:${pct(m.a)}" title="${esc(lab)} · ${hm(m.a)}">${esc(lab)}</button>`;
+      html += m.b != null ? seg("mom:" + m.id, lab, "mom" + (m.color ? " custom" : ""), m.a, m.b, m.color ? `background:${m.color}` : "")
+        : `<button type="button" class="pin${sel === "mom:" + m.id ? " sel" : ""}" data-edit="mom:${m.id}" style="left:${pct(m.a)}${m.color ? `;color:${m.color};border-left-color:${m.color}` : ""}" title="${esc(lab)} · ${hm(m.a)}">${esc(lab)}</button>`;
     });
     html += `</div>`;
   }
@@ -1072,6 +1088,23 @@ function drawFrise() {
   html += `</div><div class="hint">Clique sur un bloc pour modifier ses horaires.</div>`;
   box.innerHTML = html;
   drawEditor();
+}
+
+const SWATCHES = [["#2F64A8", "Bleu"], ["#6D4FA8", "Violet"], ["#BE185D", "Rose"], ["#B3261E", "Rouge"], ["#C2410C", "Orange"], ["#B7791F", "Ambre"], ["#1D8A5A", "Vert"], ["#0E7490", "Bleu canard"], ["#5B6770", "Gris"]];
+function slotColorPath(key) {
+  if (!key) return null; const [kind, id] = key.split(":");
+  if (kind === "main") return "colors." + id;
+  if (kind === "set" || kind === "bal") return `lineup.${id}.color`;
+  if (kind === "mom") return `moments.${id}.color`;
+  return null;
+}
+// Removing a block clears its times (the artist itself stays in the line-up); a moment is removed entirely.
+function deleteSlot(key) {
+  const [kind, id] = key.split(":"), spec = drawEditor.spec;
+  if (kind === "mom") edit("moments." + id, null);
+  else if (kind === "bal") { edit(`lineup.${id}.balance`, ""); edit(`lineup.${id}.bdebut`, ""); edit(`lineup.${id}.bfin`, ""); }
+  else if (spec) { edit(spec[1], ""); if (spec[2]) edit(spec[2], ""); }
+  flush(); drawFrise.sel = null; syncSheet(current);
 }
 
 // Small editor under the timeline for the block that was clicked.
@@ -1093,13 +1126,17 @@ function drawEditor() {
   }
   if (!spec) { box.hidden = true; box.innerHTML = ""; drawEditor.key = null; return; }
   box.hidden = false;
+  const cpath = slotColorPath(key);
   if (drawEditor.key !== key) {
     drawEditor.key = key;
     box.innerHTML = `<h4>${esc(spec[0])}</h4>
       <label>${spec[3]}<input type="time" data-path="${spec[1]}"${canWrite ? "" : " disabled"}></label>
       ${spec[2] ? `<label>${spec[4]}<input type="time" data-path="${spec[2]}"${canWrite ? "" : " disabled"}></label>` : ""}
-      <button type="button" class="btn" data-close-edit>Fermer</button>`;
+      ${cpath && canWrite ? `<div class="sw"><span>Couleur</span><button type="button" class="def" data-color="${cpath}|" title="Couleur par défaut" aria-label="Couleur par défaut">↺</button>${SWATCHES.map(([c, n]) => `<button type="button" data-color="${cpath}|${c}" style="background:${c}" title="${n}" aria-label="${n}"></button>`).join("")}</div>` : ""}
+      <div class="fe-act">${canWrite ? `<button type="button" class="btn danger" data-del-slot="${key}">Supprimer</button>` : ""}<button type="button" class="btn" data-close-edit>Fermer</button></div>`;
   } else box.querySelector("h4").textContent = spec[0];
+  if (cpath) { const cur = get(d, cpath) || ""; box.querySelectorAll("[data-color]").forEach(b => b.classList.toggle("on", b.dataset.color.split("|")[1] === cur)); }
+  drawEditor.spec = spec;
   box.querySelectorAll("input").forEach(el => { if (el !== document.activeElement) el.value = get(d, el.dataset.path) || ""; });
 }
 
