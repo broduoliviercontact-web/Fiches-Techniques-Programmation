@@ -139,6 +139,28 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 @media (max-width: 760px) { .art { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .art .an { grid-column: 1 / -1; } .art .ar { grid-column: 1 / -1; } }
 .lineup-empty { font-size: 13px; color: var(--muted); }
 .add-art { justify-self: start; }
+.linkbtn { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; text-decoration: underline; font-size: 13px; }
+.linkbtn:hover { color: var(--ink); }
+.items { display: grid; gap: 8px; }
+.item { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; gap: 6px 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.item.done { opacity: .6; }
+.item input:not([type="checkbox"]) { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 4px; padding: 5px 8px; }
+.item input:focus { border-color: var(--accent); outline: none; }
+.item .iq { font-family: var(--mono); text-align: center; }
+.item .id { font-weight: 600; }
+.item .ir { grid-column: 1 / 3; font-family: var(--mono); font-size: 13px; }
+.item .irendu { display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.item .irendu input { width: 16px; height: 16px; accent-color: var(--accent); }
+.who { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.who .wl { font: 600 11px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.wchip { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 2px 10px; font-size: 12px; cursor: pointer; }
+.wchip.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.who.nobody .wl { color: var(--warn); }
+.add-item { justify-self: start; }
+.artmat { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.artmat b { font-weight: 600; color: var(--ink); }
+.communmat { font-size: 13px; color: var(--muted); }
+.communmat b { color: var(--ink); }
 .frise .track.arts { height: 26px; margin-top: 4px; background: transparent; }
 .frise .track.arts .seg { border-radius: 3px; border-right: 0; outline: 1px solid var(--surface); }
 .slot .one { grid-column: 2 / -1; }
@@ -257,6 +279,11 @@ function lineupOf(e) {
     return (a.createdAt || 0) - (b.createdAt || 0);
   });
 }
+function itemsOf(L) {
+  return Object.entries((L && L.items) || {}).filter(([, it]) => it).map(([id, it]) => ({ id, ...it })).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+}
+function whoOf(it) { return Object.entries(it.who || {}).filter(([, v]) => v).map(([k]) => k); }
+function itemLabel(it) { return `${it.qte ? it.qte + "× " : ""}${it.des || "Matériel"}`; }
 function artistsLine(e) { return lineupOf(e).map(a => a.nom).filter(Boolean).join(" · "); }
 
 // What still needs attention on a fiche
@@ -272,6 +299,12 @@ function missing(e) {
   LOCS.forEach(l => {
     const L = get(e, "loc." + l.k) || {};
     if (l.k !== "autre" && !L.actif) out.push(l.t + " ?");
+    if (L.actif === "oui" || l.k === "autre") {
+      const its = itemsOf(L);
+      if (its.some(it => !whoOf(it).length)) out.push("Matériel " + l.t.toLowerCase() + " sans artiste");
+      const left = its.filter(it => !it.rendu).length;
+      if (past && left) out.push(`Reprise ${l.t.toLowerCase()} : ${left} à rendre`);
+    }
     if (L.actif === "oui") {
       if (get(L, "devis.statut") !== "Validé") out.push("Devis " + l.t.toLowerCase());
       if (past && !["Reçue", "Payée"].includes(get(L, "facture.statut"))) out.push("Facture " + l.t.toLowerCase());
@@ -427,6 +460,10 @@ function renderSheet(id) {
         <div class="docline"><label class="f"><span>Facture</span><input data-path="loc.${l.k}.facture.ref" placeholder="N° ou montant"></label>
           <label class="f"><span>Statut</span><select data-path="loc.${l.k}.facture.statut">${FACT_ST.map(s => `<option value="${s}">${s || "—"}</option>`).join("")}</select></label></div>
         ${attachHtml("loc." + l.k + ".facture.file", "Joindre la facture")}
+        <div class="f"><span>Matériel loué</span>
+          <div class="items" data-items="${l.k}"></div>
+          ${canWrite ? `<button type="button" class="btn add-item" data-add-item="${l.k}">+ Ajouter du matériel</button>` : ""}
+        </div>
       </div>
     </div>`).join("");
   const contactHtml = [1, 2, 3, 4].map(i => `
@@ -452,6 +489,7 @@ function renderSheet(id) {
       <div class="panel fields">
         <div class="f"><span>Line-up</span>
           <div class="lineup" id="lineup"></div>
+          <div class="communmat" id="communmat"></div>
           ${canWrite ? `<button type="button" class="btn add-art" id="add-art">+ Ajouter un artiste</button>` : ""}
         </div>
         <div class="horaires">
@@ -476,7 +514,7 @@ function renderSheet(id) {
     <section class="blk"><h2>Commentaires</h2>
       <div class="panel"><label class="f"><span class="sr" hidden>Commentaires</span><textarea data-path="commentaires" rows="6" placeholder="Accès, parking camion, loges, catering, consignes sécurité…" aria-label="Commentaires"></textarea></label></div>
     </section>
-    <datalist id="dl-loueurs"></datalist><datalist id="dl-contacts"></datalist><datalist id="dl-fonctions"></datalist>
+    <datalist id="dl-loueurs"></datalist><datalist id="dl-contacts"></datalist><datalist id="dl-fonctions"></datalist><datalist id="dl-matos"></datalist>
   </div>`;
 
   renderTop(`
@@ -497,15 +535,24 @@ function renderSheet(id) {
   sheet.addEventListener("change", (ev) => {
     const el = ev.target;
     if (el.dataset.contact) autofillContact(el.dataset.contact, el.value);
+    if (el.dataset.chk && canWrite) { edit(el.dataset.chk, el.checked); flush(); syncSheet(id); return; }
     if (el.tagName === "SELECT" || el.type === "date" || el.type === "time") flush();
   });
   sheet.addEventListener("focusout", (ev) => {
     if (Object.keys(pending).length) scheduleFlush(250);
-    if (ev.target.closest("#lineup")) setTimeout(() => { if (current === id) syncSheet(id); }, 0);
+    if (ev.target.closest("#lineup, [data-items]")) setTimeout(() => { if (current === id) syncSheet(id); }, 0);
   });
   sheet.addEventListener("click", (ev) => {
     if (!canWrite) return;
     if (ev.target.closest("#add-art")) return addArtist();
+    const ai = ev.target.closest("[data-add-item]"); if (ai) return addItem(ai.dataset.addItem);
+    const wc = ev.target.closest("[data-who]");
+    if (wc) { const [p, who] = wc.dataset.who.split("|"); const on = !!get(localDoc(), p + ".who." + who); edit(p + ".who." + who, !on); flush(); syncSheet(id); return; }
+    const ri = ev.target.closest("[data-rm-item]");
+    if (ri) {
+      if (!ri.classList.contains("armed")) { ri.classList.add("armed"); ri.textContent = "Confirmer"; setTimeout(() => { if (ri.isConnected) { ri.classList.remove("armed"); ri.textContent = "Retirer"; } }, 3000); return; }
+      edit(ri.dataset.rmItem, null); flush(); syncSheet(id); return;
+    }
     const rm = ev.target.closest("[data-rm-art]");
     if (rm) {
       if (!rm.classList.contains("armed")) { rm.classList.add("armed"); rm.textContent = "Confirmer"; setTimeout(() => { if (rm.isConnected) { rm.classList.remove("armed"); rm.textContent = "Retirer"; } }, 3000); return; }
@@ -541,7 +588,8 @@ function artRow(aid) {
     <input type="time" data-path="${P}.debut" aria-label="Début du passage" title="Début du passage">
     <input type="time" data-path="${P}.fin" aria-label="Fin du passage" title="Fin du passage">
     <div class="ar">Rider ${ynHtml(P + ".rider")}${attachHtml(P + ".riderFile", "Joindre le rider")}</div>
-    ${canWrite ? `<button type="button" class="linkbtn rm" data-rm-art="${aid}">Retirer</button>` : ""}`;
+    ${canWrite ? `<button type="button" class="linkbtn rm" data-rm-art="${aid}">Retirer</button>` : ""}
+    <div class="artmat" data-artmat="${aid}"></div>`;
   return row;
 }
 function syncLineup(d) {
@@ -556,6 +604,53 @@ function syncLineup(d) {
   if (!ids.length && !empty) { empty = document.createElement("div"); empty.className = "lineup-empty"; empty.textContent = "Aucun artiste pour l'instant. Ajoute le groupe, les DJ… avec leur horaire de passage."; box.appendChild(empty); }
   if (ids.length && empty) empty.remove();
 }
+function itemRow(k, iid) {
+  const row = document.createElement("div");
+  row.className = "item"; row.dataset.item = iid;
+  const P = `loc.${k}.items.${iid}`;
+  row.innerHTML = `<input class="iq" type="number" min="1" inputmode="numeric" data-path="${P}.qte" placeholder="Qté" aria-label="Quantité">
+    <input class="id" data-path="${P}.des" list="dl-matos" autocomplete="off" placeholder="Désignation (ex. ampli basse Ampeg SVT)" aria-label="Désignation">
+    ${canWrite ? `<button type="button" class="linkbtn rm" data-rm-item="${P}">Retirer</button>` : "<span></span>"}
+    <input class="ir" data-path="${P}.ref" placeholder="Réf. / n° d'étiquette du loueur" aria-label="Référence">
+    <label class="irendu"><input type="checkbox" data-chk="${P}.rendu"> Rendu</label>
+    <div class="who" data-whobox="${P}"></div>`;
+  return row;
+}
+function syncItems(d) {
+  const arts = lineupOf(d);
+  LOCS.forEach(l => {
+    const box = app.querySelector(`[data-items="${l.k}"]`); if (!box) return;
+    const its = itemsOf(get(d, "loc." + l.k));
+    const ids = its.map(it => it.id);
+    box.querySelectorAll("[data-item]").forEach(r => { if (!ids.includes(r.dataset.item)) r.remove(); });
+    ids.forEach(iid => { if (!box.querySelector(`[data-item="${iid}"]`)) box.appendChild(itemRow(l.k, iid)); });
+    its.forEach(it => {
+      const row = box.querySelector(`[data-item="${it.id}"]`);
+      const P = `loc.${l.k}.items.${it.id}`;
+      row.classList.toggle("done", !!it.rendu);
+      const cb = row.querySelector("[data-chk]"); cb.checked = !!it.rendu; cb.disabled = !canWrite;
+      const who = it.who || {};
+      const wb = row.querySelector("[data-whobox]");
+      const chips = arts.map(a => ({ k: a.id, t: a.nom || "Artiste sans nom" })).concat([{ k: "commun", t: "Commun" }]);
+      wb.classList.toggle("nobody", !whoOf(it).length);
+      wb.innerHTML = `<span class="wl">${whoOf(it).length ? "Pour" : "Pour qui ?"}</span>` + chips.map(c => `<button type="button" class="wchip${who[c.k] ? " on" : ""}" data-who="${P}|${c.k}" aria-pressed="${!!who[c.k]}">${esc(c.t)}</button>`).join("");
+    });
+  });
+  // Per-artist summary of what is rented for them
+  const byWho = {};
+  LOCS.forEach(l => itemsOf(get(d, "loc." + l.k)).forEach(it => whoOf(it).forEach(w => { ((byWho[w] = byWho[w] || {})[l.t] = byWho[w][l.t] || []).push(itemLabel(it)); })));
+  const fmt = m => Object.entries(m).map(([t, xs]) => `<b>${esc(t)}</b> : ${xs.map(esc).join(", ")}`).join(" · ");
+  arts.forEach(a => { const el = app.querySelector(`[data-artmat="${a.id}"]`); if (el) el.innerHTML = byWho[a.id] ? "Matériel loué : " + fmt(byWho[a.id]) : ""; });
+  const cm = $("#communmat"); if (cm) cm.innerHTML = byWho.commun ? "Matériel commun : " + fmt(byWho.commun) : "";
+}
+function addItem(k) {
+  const iid = "m" + newId().slice(0, 9);
+  const arts = lineupOf(localDoc());
+  const who = arts.length === 1 ? { [arts[0].id]: true } : {};
+  edit(`loc.${k}.items.${iid}`, { qte: "1", des: "", ref: "", who, rendu: false, createdAt: Date.now() });
+  flush(); syncSheet(current);
+  const inp = app.querySelector(`[data-items="${k}"] [data-item="${iid}"] .id`); if (inp) inp.focus();
+}
 function addArtist() {
   const aid = "a" + newId().slice(0, 9);
   edit("lineup." + aid, { nom: "", type: "", debut: "", fin: "", rider: "", riderFile: null, createdAt: Date.now() });
@@ -566,6 +661,7 @@ function addArtist() {
 function syncSheet(id) {
   const d = localDoc();
   syncLineup(d);
+  syncItems(d);
   const act = document.activeElement;
   app.querySelectorAll("[data-path]").forEach(el => {
     if (el === act || pending[el.dataset.path] !== undefined || inflight.has(el.dataset.path)) return;
@@ -630,13 +726,13 @@ async function upload(el, path, file) {
 }
 
 function fillDatalists() {
-  const loueurs = new Set(), noms = new Map(), fonctions = new Set();
+  const loueurs = new Set(), noms = new Map(), fonctions = new Set(), matos = new Set();
   events.forEach(e => {
-    LOCS.forEach(l => { const v = get(e, "loc." + l.k + ".loueur"); if (v) loueurs.add(v.trim()); });
+    LOCS.forEach(l => { const v = get(e, "loc." + l.k + ".loueur"); if (v) loueurs.add(v.trim()); itemsOf(get(e, "loc." + l.k)).forEach(it => { if (it.des) matos.add(it.des.trim()); }); });
     [1, 2, 3, 4].forEach(i => { const c = get(e, "contacts.c" + i); if (c && c.nom) { noms.set(c.nom.trim(), c); if (c.fonction) fonctions.add(c.fonction.trim()); } });
   });
   const set = (id, vals) => { const dl = $("#" + id); if (dl) dl.innerHTML = [...vals].sort((a, b) => a.localeCompare(b, "fr")).map(v => `<option value="${esc(v)}">`).join(""); };
-  set("dl-loueurs", loueurs); set("dl-contacts", noms.keys()); set("dl-fonctions", fonctions);
+  set("dl-loueurs", loueurs); set("dl-contacts", noms.keys()); set("dl-fonctions", fonctions); set("dl-matos", matos);
   fillDatalists.contacts = noms;
 }
 
@@ -729,7 +825,7 @@ async function duplicate(id) {
   await flush();
   const src = clone(events.get(id));
   const d = Object.assign(blankEvent(), src, { numero: "", date: "", nom: (src.nom || "Sans nom") + " (copie)", createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me || "" });
-  LOCS.forEach(l => { const L = d.loc[l.k]; if (L) { L.devis = { ref: "", statut: "", file: null }; L.facture = { ref: "", statut: "", file: null }; } });
+  LOCS.forEach(l => { const L = d.loc[l.k]; if (L) { L.devis = { ref: "", statut: "", file: null }; L.facture = { ref: "", statut: "", file: null }; Object.values(L.items || {}).forEach(it => { if (it) it.rendu = false; }); } });
   const nid = newId();
   try { await api("POST", "/api/events", { id: nid, data: d }); events.set(nid, d); toast("Fiche dupliquée. Pense à changer le n° et la date."); go(nid); }
   catch (e) { handleWriteError(e); }
@@ -773,7 +869,9 @@ async function exportDocx(id) {
       const on = l.k === "autre" || L.actif !== "non";
       v[l.k + ".loueur"] = on ? L.loueur || "" : "";
       v[l.k + ".devis"] = on ? docTxt(L.devis) : "";
-      v[l.k + ".facture"] = on ? docTxt(L.facture) : "";
+      const names = Object.fromEntries(arts.map(a => [a.id, a.nom || "Artiste"])); names.commun = "commun";
+      const its = on ? itemsOf(L) : [];
+      v[l.k + ".facture"] = (on ? docTxt(L.facture) : "") + (its.length ? "\n\nMatériel loué :\n" + its.map(it => `•  ${itemLabel(it)}${it.ref ? " [" + it.ref + "]" : ""} — ${whoOf(it).map(w => names[w] || "?").join(", ") || "à attribuer"}`).join("\n") : "");
     });
     [1, 2, 3, 4].forEach(i => ["nom", "fonction", "tel", "mail"].forEach(k => {
       const val = get(e, `contacts.c${i}.${k}`) || "";
