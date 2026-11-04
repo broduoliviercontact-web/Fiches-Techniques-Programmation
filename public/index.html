@@ -126,6 +126,21 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .slot > b i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
 .slot input { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 4px; padding: 6px 8px; font-family: var(--mono); }
 .slot input:focus { border-color: var(--accent); outline: none; }
+.lineup { display: grid; gap: 8px; }
+.art { display: grid; grid-template-columns: minmax(0, 1fr) 104px 92px 92px auto auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.art input, .art select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 4px; padding: 6px 8px; }
+.art input:focus, .art select:focus { border-color: var(--accent); outline: none; }
+.art input[type="time"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.art .an { font-weight: 600; }
+.art .ar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 600 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.art .ar .attach { font: 13px var(--body); letter-spacing: 0; text-transform: none; }
+.art .rm { justify-self: end; }
+.art .rm.armed { color: var(--danger); font-weight: 600; }
+@media (max-width: 760px) { .art { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .art .an { grid-column: 1 / -1; } .art .ar { grid-column: 1 / -1; } }
+.lineup-empty { font-size: 13px; color: var(--muted); }
+.add-art { justify-self: start; }
+.frise .track.arts { height: 26px; margin-top: 4px; background: transparent; }
+.frise .track.arts .seg { border-radius: 3px; border-right: 0; outline: 1px solid var(--surface); }
 .slot .one { grid-column: 2 / -1; }
 .frise { margin-top: 20px; }
 .frise .track { position: relative; height: 34px; background: var(--sunk); border-radius: 4px; overflow: hidden; }
@@ -221,18 +236,38 @@ function blankEvent() {
   loc.autre.label = "";
   const contacts = {};
   [1, 2, 3, 4].forEach(i => contacts["c" + i] = { nom: "", fonction: "", tel: "", mail: "" });
-  return { numero: "", nom: "", date: "", artistes: "", rider: "", riderFile: null,
+  return { numero: "", nom: "", date: "", artistes: "", rider: "", riderFile: null, lineup: {},
     h: { montageDebut: "", montageFin: "", soundcheckDebut: "", soundcheckFin: "", ouverture: "", duree: "", fermPublic: "", fermPortes: "", demontageDebut: "", demontageFin: "" },
     loc, contacts, commentaires: "", createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me || "" };
 }
+
+// Artists of a fiche, sorted by set time (sets after midnight count as late).
+const TYPES = ["Groupe", "DJ", "Live", "Autre"];
+function artMins(t, base) { const v = mins(t); if (v == null) return null; return base != null && v < base - 360 ? v + 1440 : v; }
+function lineupOf(e) {
+  let list;
+  if (e.lineup && typeof e.lineup === "object") list = Object.entries(e.lineup).filter(([, a]) => a).map(([id, a]) => ({ id, ...a }));
+  else list = (e.artistes || e.rider) ? [{ id: "a0", nom: e.artistes || "", type: "", debut: "", fin: "", rider: e.rider || "", riderFile: e.riderFile || null, createdAt: 0 }] : [];
+  const base = mins(get(e, "h.ouverture")) ?? mins(get(e, "h.soundcheckFin"));
+  return list.sort((a, b) => {
+    const x = artMins(a.debut, base), y = artMins(b.debut, base);
+    if (x != null && y != null && x !== y) return x - y;
+    if (x == null && y != null) return 1;
+    if (y == null && x != null) return -1;
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  });
+}
+function artistsLine(e) { return lineupOf(e).map(a => a.nom).filter(Boolean).join(" · "); }
 
 // What still needs attention on a fiche
 function missing(e) {
   const out = [];
   const past = e.date && e.date < todayISO();
   if (!e.date) out.push("Date");
-  if (!e.rider) out.push("Rider ?");
-  else if (e.rider === "oui" && !e.riderFile) out.push("Rider à joindre");
+  const arts = lineupOf(e);
+  if (!arts.length) out.push("Line-up");
+  if (arts.some(a => !a.rider)) out.push("Rider ?");
+  if (arts.some(a => a.rider === "oui" && !a.riderFile)) out.push("Rider à joindre");
   if (!get(e, "h.montageDebut") || !get(e, "h.ouverture")) out.push("Horaires");
   LOCS.forEach(l => {
     const L = get(e, "loc." + l.k) || {};
@@ -313,7 +348,7 @@ function render(fromSnap) {
   const id = route();
   if (id) {
     if (!loaded) return;
-    if (!events.has(id)) { current = null; renderList(); return; }
+    if (!events.has(id)) { current = null; renderList(); if (render.tried !== id) { render.tried = id; refresh(); } return; }
     if (current !== id || !$("#sheet")) { current = id; pending = {}; renderSheet(id); }
     else if (fromSnap) syncSheet(id);
     return;
@@ -330,7 +365,7 @@ function renderList() {
   const nb = $("#new"); if (nb) nb.onclick = createEvent;
   if (!loaded) return;
   const q = search.trim().toLowerCase();
-  const all = [...events.entries()].map(([id, e]) => ({ id, e })).filter(({ e }) => !q || [e.numero, e.nom, e.artistes, ...LOCS.map(l => get(e, "loc." + l.k + ".loueur"))].join(" ").toLowerCase().includes(q));
+  const all = [...events.entries()].map(([id, e]) => ({ id, e })).filter(({ e }) => !q || [e.numero, e.nom, artistsLine(e), ...LOCS.map(l => get(e, "loc." + l.k + ".loueur"))].join(" ").toLowerCase().includes(q));
   const today = todayISO();
   const up = all.filter(x => !x.e.date || x.e.date >= today).sort((a, b) => (a.e.date || "9999").localeCompare(b.e.date || "9999"));
   const past = all.filter(x => x.e.date && x.e.date < today).sort((a, b) => b.e.date.localeCompare(a.e.date));
@@ -340,7 +375,7 @@ function renderList() {
     return `<button class="row" type="button" data-id="${esc(id)}">
       <span class="d">${esc(fmtDate(e.date) || "Sans date")}</span>
       <span class="n">${esc(e.numero || "—")}</span>
-      <span class="t"><b>${esc(e.nom || "Sans nom")}</b><span>${esc(e.artistes || "Artiste à préciser")}</span></span>
+      <span class="t"><b>${esc(e.nom || "Sans nom")}</b><span>${esc(artistsLine(e) || "Line-up à préciser")}</span></span>
       <span class="chips">${chips}</span></button>`;
   };
   let body = "";
@@ -415,9 +450,9 @@ function renderSheet(id) {
 
     <section class="blk"><h2>Détails</h2>
       <div class="panel fields">
-        <div class="row2" style="align-items:end">
-          <label class="f"><span>Artiste(s)</span><input data-path="artistes" placeholder="Nom des artistes"></label>
-          <div class="f"><span>Rider</span><div class="line" style="justify-content:flex-start">${ynHtml("rider")}${attachHtml("riderFile", "Joindre le rider")}</div></div>
+        <div class="f"><span>Line-up</span>
+          <div class="lineup" id="lineup"></div>
+          ${canWrite ? `<button type="button" class="btn add-art" id="add-art">+ Ajouter un artiste</button>` : ""}
         </div>
         <div class="horaires">
           <div class="fields">
@@ -457,20 +492,33 @@ function renderSheet(id) {
   sheet.addEventListener("input", (ev) => {
     const el = ev.target; if (!el.dataset.path || !canWrite) return;
     edit(el.dataset.path, el.value);
-    if (el.dataset.path.startsWith("h.")) drawFrise();
+    if (el.dataset.path.startsWith("h.") || el.dataset.path.startsWith("lineup.")) drawFrise();
   });
   sheet.addEventListener("change", (ev) => {
     const el = ev.target;
     if (el.dataset.contact) autofillContact(el.dataset.contact, el.value);
     if (el.tagName === "SELECT" || el.type === "date" || el.type === "time") flush();
   });
-  sheet.addEventListener("focusout", () => { if (Object.keys(pending).length) scheduleFlush(250); });
+  sheet.addEventListener("focusout", (ev) => {
+    if (Object.keys(pending).length) scheduleFlush(250);
+    if (ev.target.closest("#lineup")) setTimeout(() => { if (current === id) syncSheet(id); }, 0);
+  });
   sheet.addEventListener("click", (ev) => {
-    const b = ev.target.closest("[data-yn]"); if (!b || !canWrite) return;
+    if (!canWrite) return;
+    if (ev.target.closest("#add-art")) return addArtist();
+    const rm = ev.target.closest("[data-rm-art]");
+    if (rm) {
+      if (!rm.classList.contains("armed")) { rm.classList.add("armed"); rm.textContent = "Confirmer"; setTimeout(() => { if (rm.isConnected) { rm.classList.remove("armed"); rm.textContent = "Retirer"; } }, 3000); return; }
+      edit("lineup." + rm.dataset.rmArt, null); flush(); syncSheet(id); return;
+    }
+    const b = ev.target.closest("[data-yn]"); if (!b) return;
     const path = b.dataset.yn, cur = get(localDoc(), path);
     const v = cur === b.dataset.value ? "" : b.dataset.value;
     edit(path, v); flush(); syncSheet(id);
   });
+  // Fiches made before the line-up existed: turn the single artist field into the first artist.
+  const cur = events.get(id);
+  if (canWrite && !cur.lineup && (cur.artistes || cur.rider)) { const a = lineupOf(cur)[0]; delete a.id; edit("lineup", { a0: a }); flush(); }
   if (!get(events.get(id), "nom") && canWrite) $("#f-nom").focus({ preventScroll: true });
   syncSheet(id);
   window.scrollTo(0, 0);
@@ -478,13 +526,46 @@ function renderSheet(id) {
 
 function localDoc() {
   const d = clone(events.get(current));
-  inflight.forEach((v, p) => setIn(d, p, v));
-  Object.entries(pending).forEach(([p, v]) => setIn(d, p, v));
+  const byDepth = (a, b) => a[0].split(".").length - b[0].split(".").length;
+  [...inflight.entries()].sort(byDepth).forEach(([p, v]) => setIn(d, p, v));
+  Object.entries(pending).sort(byDepth).forEach(([p, v]) => setIn(d, p, v));
   return d;
+}
+
+function artRow(aid) {
+  const row = document.createElement("div");
+  row.className = "art"; row.dataset.art = aid;
+  const P = "lineup." + aid;
+  row.innerHTML = `<input class="an" data-path="${P}.nom" placeholder="Nom de l'artiste" aria-label="Nom de l'artiste">
+    <select data-path="${P}.type" aria-label="Type"><option value="">Type…</option>${TYPES.map(t => `<option>${t}</option>`).join("")}</select>
+    <input type="time" data-path="${P}.debut" aria-label="Début du passage" title="Début du passage">
+    <input type="time" data-path="${P}.fin" aria-label="Fin du passage" title="Fin du passage">
+    <div class="ar">Rider ${ynHtml(P + ".rider")}${attachHtml(P + ".riderFile", "Joindre le rider")}</div>
+    ${canWrite ? `<button type="button" class="linkbtn rm" data-rm-art="${aid}">Retirer</button>` : ""}`;
+  return row;
+}
+function syncLineup(d) {
+  const box = $("#lineup"); if (!box) return;
+  const list = lineupOf(d);
+  const ids = list.map(a => a.id);
+  box.querySelectorAll("[data-art]").forEach(r => { if (!ids.includes(r.dataset.art)) r.remove(); });
+  ids.forEach(aid => { if (!box.querySelector(`[data-art="${aid}"]`)) box.appendChild(artRow(aid)); });
+  const domOrder = [...box.querySelectorAll("[data-art]")].map(r => r.dataset.art).join();
+  if (domOrder !== ids.join() && !box.contains(document.activeElement)) ids.forEach(aid => box.appendChild(box.querySelector(`[data-art="${aid}"]`)));
+  let empty = box.querySelector(".lineup-empty");
+  if (!ids.length && !empty) { empty = document.createElement("div"); empty.className = "lineup-empty"; empty.textContent = "Aucun artiste pour l'instant. Ajoute le groupe, les DJ… avec leur horaire de passage."; box.appendChild(empty); }
+  if (ids.length && empty) empty.remove();
+}
+function addArtist() {
+  const aid = "a" + newId().slice(0, 9);
+  edit("lineup." + aid, { nom: "", type: "", debut: "", fin: "", rider: "", riderFile: null, createdAt: Date.now() });
+  flush(); syncSheet(current);
+  const inp = app.querySelector(`[data-art="${aid}"] .an`); if (inp) inp.focus();
 }
 
 function syncSheet(id) {
   const d = localDoc();
+  syncLineup(d);
   const act = document.activeElement;
   app.querySelectorAll("[data-path]").forEach(el => {
     if (el === act || pending[el.dataset.path] !== undefined || inflight.has(el.dataset.path)) return;
@@ -494,7 +575,7 @@ function syncSheet(id) {
   app.querySelectorAll("[data-yn]").forEach(b => { const on = get(d, b.dataset.yn) === b.dataset.value; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
   LOCS.forEach(l => { const p = app.querySelector(`[data-loc="${l.k}"]`); if (p) p.classList.toggle("off", l.k !== "autre" && get(d, "loc." + l.k + ".actif") !== "oui"); });
   app.querySelectorAll("[data-file]").forEach(el => renderAttach(el, d));
-  const rf = app.querySelector('[data-file="riderFile"]'); if (rf) rf.hidden = d.rider !== "oui";
+  app.querySelectorAll('[data-file$=".riderFile"]').forEach(el => { el.hidden = get(d, el.dataset.file.replace(/riderFile$/, "rider")) !== "oui"; });
   drawFrise();
   fillDatalists();
   renderMeta(d);
@@ -573,12 +654,16 @@ function autofillContact(slot, nom) {
 function mins(t) { if (!t) return null; const [h, m] = t.split(":").map(Number); return h * 60 + m; }
 function drawFrise() {
   const box = $("#frise"); if (!box) return;
-  const h = get(localDoc(), "h") || {};
+  const doc = localDoc(); const h = doc.h || {};
   // Order of the day; a time earlier than the previous one is read as after midnight.
   const order = ["montageDebut", "montageFin", "soundcheckDebut", "soundcheckFin", "ouverture", "fermPublic", "fermPortes", "demontageDebut", "demontageFin"];
   const t = {}; let prev = null, plus = 0;
   order.forEach(k => { let v = mins(h[k]); if (v == null) return; v += plus; if (prev != null && v < prev - 60) { plus += 1440; v += 1440; } t[k] = v; prev = v; });
-  const vals = Object.values(t);
+  const base = t.ouverture ?? t.soundcheckFin ?? null;
+  const rel = v => { if (v == null || base == null) return v; let c = v + Math.floor(base / 1440) * 1440; if (c < base - 360) c += 1440; return c; };
+  const arts = lineupOf(doc).map(a => ({ nom: a.nom || "Artiste", a: rel(mins(a.debut)), b: rel(mins(a.fin)) })).filter(x => x.a != null && x.b != null);
+  arts.forEach(x => { if (x.b <= x.a) x.b += 1440; });
+  const vals = Object.values(t).concat(arts.flatMap(x => [x.a, x.b]));
   if (vals.length < 2) { box.innerHTML = `<div class="ph">Renseigne au moins deux horaires pour voir la journée sur une frise.</div>`; return; }
   const lo = Math.floor(Math.min(...vals) / 60) * 60, hi = Math.ceil(Math.max(...vals) / 60) * 60 || lo + 60;
   const span = Math.max(60, hi - lo), pct = v => ((v - lo) / span * 100).toFixed(3) + "%";
@@ -592,7 +677,13 @@ function drawFrise() {
   let html = `<div class="track">`;
   segs.forEach(([lab, c, a, b]) => html += `<div class="seg" style="left:${pct(a)};width:calc(${pct(b)} - ${pct(a)});background:var(${c})" title="${lab}">${lab}</div>`);
   if (t.fermPortes != null) html += `<div class="mark" style="left:${pct(t.fermPortes)}" title="Fermeture des portes"></div>`;
-  html += `</div><div class="ticks">`;
+  html += `</div>`;
+  if (arts.length) {
+    html += `<div class="track arts">`;
+    arts.forEach((x, i) => html += `<div class="seg" style="left:${pct(x.a)};width:calc(${pct(x.b)} - ${pct(x.a)});background:var(${i % 2 ? "--seg-sound" : "--seg-show"})" title="${esc(x.nom)}">${esc(x.nom)}</div>`);
+    html += `</div>`;
+  }
+  html += `<div class="ticks">`;
   const step = span > 14 * 60 ? 180 : span > 7 * 60 ? 120 : 60;
   for (let v = lo; v <= hi; v += step) { const hh = Math.floor(v / 60) % 24; html += `<span style="left:${pct(v)}">${String(hh).padStart(2, "0")}h</span>`; }
   box.innerHTML = html + `</div>`;
@@ -604,7 +695,7 @@ function scheduleFlush(ms) { clearTimeout(flushTimer); flushTimer = setTimeout(f
 function setSave(t) { const s = $("#savestate"); if (s) s.textContent = t; }
 async function flush() {
   clearTimeout(flushTimer);
-  const id = current; const entries = Object.entries(pending);
+  const id = current; const entries = Object.entries(pending).sort((a, b) => a[0].split(".").length - b[0].split(".").length);
   if (!id || !entries.length) return;
   pending = {};
   const patch = {};
@@ -666,7 +757,8 @@ async function exportDocx(id) {
     const zip = await JSZip.loadAsync(tpl);
     let xml = await zip.file("word/document.xml").async("string");
     const h = e.h || {};
-    const art = (e.artistes || "").trim();
+    const arts = lineupOf(e);
+    const art = arts.map(a => [a.nom || "Artiste", a.type ? `(${a.type.toLowerCase()})` : "", range(a.debut, a.fin)].filter(Boolean).join(" ")).join("  ·  ");
     const v = {
       NUM: e.numero || "000", NOM: e.nom || "", DATE: e.date ? "(" + fmtDate(e.date, true) + ")" : "",
       ARTISTES_INLINE: art, PAD: "      ", ARTISTES_BELOW: "",
@@ -687,7 +779,7 @@ async function exportDocx(id) {
       const val = get(e, `contacts.c${i}.${k}`) || "";
       v[`c${i}.${k}`] = val && (k === "nom" || k === "fonction") ? ": " + val : val;
     }));
-    const box = { rider: e.rider, backline: get(e, "loc.backline.actif"), lumiere: get(e, "loc.lumiere.actif"), machinerie: get(e, "loc.machinerie.actif") };
+    const box = { rider: arts.some(a => a.rider === "oui") ? "oui" : arts.length && arts.every(a => a.rider === "non") ? "non" : "", backline: get(e, "loc.backline.actif"), lumiere: get(e, "loc.lumiere.actif"), machinerie: get(e, "loc.machinerie.actif") };
     xml = xml.replace(/\{\{CB:([a-z]+):(OUI|NON)\}\}/g, (_, k, w) => box[k] === w.toLowerCase() ? "\u2612" : "\u2610");
     xml = xml.replace(/\{\{([A-Za-z0-9_.]+)\}\}/g, (_, k) => xmlText(v[k] ?? ""));
     zip.file("word/document.xml", xml);
