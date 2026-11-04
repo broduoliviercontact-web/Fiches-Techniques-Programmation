@@ -127,16 +127,16 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .slot input { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 4px; padding: 6px 8px; font-family: var(--mono); }
 .slot input:focus { border-color: var(--accent); outline: none; }
 .lineup { display: grid; gap: 8px; }
-.art { display: grid; grid-template-columns: minmax(0, 1fr) 104px 92px 92px auto auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.art { display: grid; grid-template-columns: minmax(140px, 1fr) 110px 96px 96px auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
 .art input, .art select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 4px; padding: 6px 8px; }
 .art input:focus, .art select:focus { border-color: var(--accent); outline: none; }
 .art input[type="time"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .art .an { font-weight: 600; }
-.art .ar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 600 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.art .ar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 600 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .art .ar .attach { font: 13px var(--body); letter-spacing: 0; text-transform: none; }
 .art .rm { justify-self: end; }
 .art .rm.armed { color: var(--danger); font-weight: 600; }
-@media (max-width: 760px) { .art { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .art .an { grid-column: 1 / -1; } .art .ar { grid-column: 1 / -1; } }
+@media (max-width: 760px) { .art { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .art .an, .art select { grid-column: 1 / -1; } .art .rm { grid-column: 1 / -1; order: 10; } }
 .lineup-empty { font-size: 13px; color: var(--muted); }
 .add-art { justify-self: start; }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; text-decoration: underline; font-size: 13px; }
@@ -587,8 +587,8 @@ function artRow(aid) {
     <select data-path="${P}.type" aria-label="Type"><option value="">Type…</option>${TYPES.map(t => `<option>${t}</option>`).join("")}</select>
     <input type="time" data-path="${P}.debut" aria-label="Début du passage" title="Début du passage">
     <input type="time" data-path="${P}.fin" aria-label="Fin du passage" title="Fin du passage">
+    ${canWrite ? `<button type="button" class="linkbtn rm" data-rm-art="${aid}">Retirer</button>` : "<span></span>"}
     <div class="ar">Rider ${ynHtml(P + ".rider")}${attachHtml(P + ".riderFile", "Joindre le rider")}</div>
-    ${canWrite ? `<button type="button" class="linkbtn rm" data-rm-art="${aid}">Retirer</button>` : ""}
     <div class="artmat" data-artmat="${aid}"></div>`;
   return row;
 }
@@ -671,7 +671,7 @@ function syncSheet(id) {
   app.querySelectorAll("[data-yn]").forEach(b => { const on = get(d, b.dataset.yn) === b.dataset.value; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on); });
   LOCS.forEach(l => { const p = app.querySelector(`[data-loc="${l.k}"]`); if (p) p.classList.toggle("off", l.k !== "autre" && get(d, "loc." + l.k + ".actif") !== "oui"); });
   app.querySelectorAll("[data-file]").forEach(el => renderAttach(el, d));
-  app.querySelectorAll('[data-file$=".riderFile"]').forEach(el => { el.hidden = get(d, el.dataset.file.replace(/riderFile$/, "rider")) !== "oui"; });
+  app.querySelectorAll('[data-file$=".riderFile"]').forEach(el => { el.hidden = get(d, el.dataset.file.replace(/riderFile$/, "rider")) === "non"; });
   drawFrise();
   fillDatalists();
   renderMeta(d);
@@ -716,13 +716,16 @@ async function upload(el, path, file) {
     if (r.status === 401) { showLogin(); return; }
     if (!r.ok) throw { code: r.status === 413 ? "too_large" : r.status === 415 ? "type" : "server" };
     const { path: blobPath } = await r.json();
-    edit(path, { path: blobPath, name: file.name }); flush();
+    edit(path, { path: blobPath, name: file.name });
+    if (/\.riderFile$/.test(path)) edit(path.replace(/riderFile$/, "rider"), "oui");
+    flush();
   } catch (e) {
     toast(e && e.code === "too_large" ? "Fichier trop lourd : 4,4 Mo maximum. Compresse le PDF puis réessaie."
       : e && e.code === "type" ? "Formats acceptés : PDF, JPG, PNG, WEBP, HEIC."
       : "L'envoi du fichier a échoué. Réessaie dans un instant.");
   }
   delete el.dataset.busy; renderAttach(el, localDoc());
+  if (current) syncSheet(current);
 }
 
 function fillDatalists() {
