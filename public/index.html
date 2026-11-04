@@ -197,7 +197,7 @@ let events = new Map();     // id -> data
 let loaded = false, loadTimer = null, loadNote = "";
 let current = null;         // id of the open fiche
 let pending = {};           // path -> value not yet written
-let inflight = new Set();   // paths being written
+let inflight = new Map();   // path -> value being written
 let flushTimer = null;
 let search = "";
 
@@ -266,7 +266,7 @@ async function refresh() {
 }
 function startPolling() {
   clearInterval(pollTimer);
-  pollTimer = setInterval(() => { if (!document.hidden && !Object.keys(pending).length) refresh(); }, 8000);
+  pollTimer = setInterval(() => { if (!document.hidden && !Object.keys(pending).length && !inflight.size) refresh(); }, 8000);
 }
 document.addEventListener("visibilitychange", () => { if (!document.hidden && pollTimer) refresh(); });
 function showLogin(msg) {
@@ -476,7 +476,12 @@ function renderSheet(id) {
   window.scrollTo(0, 0);
 }
 
-function localDoc() { const d = clone(events.get(current)); Object.entries(pending).forEach(([p, v]) => setIn(d, p, v)); return d; }
+function localDoc() {
+  const d = clone(events.get(current));
+  inflight.forEach((v, p) => setIn(d, p, v));
+  Object.entries(pending).forEach(([p, v]) => setIn(d, p, v));
+  return d;
+}
 
 function syncSheet(id) {
   const d = localDoc();
@@ -603,13 +608,15 @@ async function flush() {
   if (!id || !entries.length) return;
   pending = {};
   const patch = {};
-  entries.forEach(([p, v]) => { setIn(patch, p, v); inflight.add(p); });
+  entries.forEach(([p, v]) => { setIn(patch, p, v); inflight.set(p, v); });
   patch.updatedBy = me || "";
   setSave("Enregistrement…");
   try {
     const { id: _id, ...doc } = await api("PATCH", "/api/events/" + id, patch);
     events.set(id, doc);
     setSave("Enregistré");
+    entries.forEach(([p]) => inflight.delete(p));
+    if (current === id) syncSheet(id);
   } catch (e) {
     entries.forEach(([p, v]) => { if (pending[p] === undefined) pending[p] = v; });
     handleWriteError(e);
