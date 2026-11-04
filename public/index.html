@@ -511,11 +511,12 @@ async function renderMeta(d) {
 function renderAttach(el, d) {
   const path = el.dataset.file, f = get(d, path);
   if (el.dataset.busy) return;
-  if (f && f.url) {
-    el.innerHTML = `<a href="${esc(f.url)}" target="_blank" rel="noopener">📎 ${esc(f.name || "Pièce jointe")}</a>${canWrite ? `<button type="button" class="linkbtn" data-rm>retirer</button>` : ""}`;
+  if (f && (f.path || f.url)) {
+    const href = f.path ? "/api/file?p=" + encodeURIComponent(f.path) : f.url;
+    el.innerHTML = `<a href="${esc(href)}" target="_blank" rel="noopener">📎 ${esc(f.name || "Pièce jointe")}</a>${canWrite ? `<button type="button" class="linkbtn" data-rm>retirer</button>` : ""}`;
     const rm = el.querySelector("[data-rm]"); if (rm) rm.onclick = () => { edit(path, null); flush(); renderAttach(el, localDoc()); };
   } else if (canWrite) {
-    el.innerHTML = `<button type="button" class="linkbtn" data-up>+ ${esc(el.dataset.label)} (PDF, image)</button><input type="file" accept="application/pdf,image/*" hidden>`;
+    el.innerHTML = `<button type="button" class="linkbtn" data-up>+ ${esc(el.dataset.label)} (PDF, image, 4 Mo max)</button><input type="file" accept="application/pdf,image/*" hidden>`;
     const inp = el.querySelector("input"); el.querySelector("[data-up]").onclick = () => inp.click();
     inp.onchange = () => inp.files[0] && upload(el, path, inp.files[0]);
   } else {
@@ -526,12 +527,18 @@ function renderAttach(el, d) {
 async function upload(el, path, file) {
   el.dataset.busy = "1"; el.innerHTML = `<span class="busy">Envoi de ${esc(file.name)}…</span>`;
   try {
-    const { upload: blobUpload } = await import("https://esm.sh/@vercel/blob@2.8.2/client");
-    const safe = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]+/g, "-");
-    const r = await blobUpload(`fiches/${current}/${safe}`, file, { access: "public", handleUploadUrl: "/api/upload", contentType: file.type || (/\.pdf$/i.test(file.name) ? "application/pdf" : "image/jpeg") });
-    edit(path, { url: r.url, name: file.name }); flush();
+    if (file.size > 4.4 * 1024 * 1024) throw { code: "too_large" };
+    const type = file.type || (/\.pdf$/i.test(file.name) ? "application/pdf" : "image/jpeg");
+    const r = await fetch("/api/upload", { method: "POST", body: file, credentials: "same-origin",
+      headers: { "Content-Type": type, "X-Fiche": current, "X-Filename": encodeURIComponent(file.name) } });
+    if (r.status === 401) { showLogin(); return; }
+    if (!r.ok) throw { code: r.status === 413 ? "too_large" : r.status === 415 ? "type" : "server" };
+    const { path: blobPath } = await r.json();
+    edit(path, { path: blobPath, name: file.name }); flush();
   } catch (e) {
-    toast(/size|large/i.test(String(e && e.message)) ? "Fichier trop lourd (50 Mo maximum)." : "L'envoi du fichier a échoué. Réessaie avec un PDF ou une image.");
+    toast(e && e.code === "too_large" ? "Fichier trop lourd : 4,4 Mo maximum. Compresse le PDF puis réessaie."
+      : e && e.code === "type" ? "Formats acceptés : PDF, JPG, PNG, WEBP, HEIC."
+      : "L'envoi du fichier a échoué. Réessaie dans un instant.");
   }
   delete el.dataset.busy; renderAttach(el, localDoc());
 }
