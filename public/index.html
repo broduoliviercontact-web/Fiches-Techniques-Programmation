@@ -109,7 +109,8 @@ section.blk { margin-top: 32px; }
 .f input:focus, .f select:focus, .f textarea:focus { border-color: var(--accent); outline: none; background: var(--surface); }
 .f input[type="time"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
-.fields { display: grid; gap: 12px; }
+.fields { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+.fields > *, .panel > * { min-width: 0; }
 .row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 @media (max-width: 520px) { .row3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -221,11 +222,11 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .frise .ph { font-size: 13px; color: var(--muted); padding: 8px 0; }
 
 /* Locations */
-.loc { display: grid; gap: 12px; align-content: start; }
+.loc { display: grid; gap: 12px; align-content: start; grid-template-columns: minmax(0, 1fr); min-width: 0; }
 .loc.off .locbody { display: none; }
 .docline { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 8px; align-items: end; }
 .attach { display: flex; align-items: center; gap: 8px; font-size: 13px; min-height: 28px; flex-wrap: wrap; }
-.attach a { color: var(--accent); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.attach a { color: var(--accent); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; min-width: 0; flex: 0 1 auto; }
 .attach .linkbtn { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; text-decoration: underline; font-size: 13px; }
 .attach .linkbtn:hover { color: var(--ink); }
 .attach .busy { color: var(--muted); }
@@ -855,7 +856,7 @@ function renderAttach(el, d) {
   if (f && (f.path || f.url)) {
     const href = f.path ? "/api/file?p=" + encodeURIComponent(f.path) : f.url;
     const canRead = canWrite && f.path && /\.devis\.file$/.test(path) && /\.pdf$/i.test(f.name || f.path);
-    el.innerHTML = `<a href="${esc(href)}" target="_blank" rel="noopener">📎 ${esc(f.name || "Pièce jointe")}</a>${canRead ? `<button type="button" class="btn sm" data-read>Lire le devis</button>` : ""}${canWrite ? `<button type="button" class="linkbtn" data-rm>retirer</button>` : ""}`;
+    el.innerHTML = `<a href="${esc(href)}" target="_blank" rel="noopener" title="${esc(f.name || "")}">📎 ${esc(f.name || "Pièce jointe")}</a>${canRead ? `<button type="button" class="btn sm" data-read>Lire le devis</button>` : ""}${canWrite ? `<button type="button" class="linkbtn" data-rm>retirer</button>` : ""}`;
     const rd = el.querySelector("[data-read]"); if (rd) rd.onclick = () => readDevis(path.split(".")[1], f);
     const rm = el.querySelector("[data-rm]"); if (rm) rm.onclick = () => { edit(path, null); flush(); renderAttach(el, localDoc()); };
   } else if (canWrite) {
