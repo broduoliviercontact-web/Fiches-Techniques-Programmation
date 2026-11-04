@@ -127,7 +127,7 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .slot input { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 4px; padding: 6px 8px; font-family: var(--mono); }
 .slot input:focus { border-color: var(--accent); outline: none; }
 .lineup { display: grid; gap: 8px; }
-.art { display: grid; grid-template-columns: minmax(140px, 1fr) 110px 96px 96px auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.art { display: grid; grid-template-columns: minmax(140px, 1fr) 150px 96px 96px auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
 .art input, .art select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 4px; padding: 6px 8px; }
 .art input:focus, .art select:focus { border-color: var(--accent); outline: none; }
 .art input[type="time"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
@@ -264,7 +264,7 @@ function blankEvent() {
 }
 
 // Artists of a fiche, sorted by set time (sets after midnight count as late).
-const TYPES = ["Groupe", "DJ", "Live", "Autre"];
+const TYPES = ["Groupe", ["DJ", ["DJ CDJ", "DJ vinyle", "DJ CDJ + vinyle", "DJ"]], "Live", "Autre"];
 function artMins(t, base) { const v = mins(t); if (v == null) return null; return base != null && v < base - 360 ? v + 1440 : v; }
 function lineupOf(e) {
   let list;
@@ -584,7 +584,7 @@ function artRow(aid) {
   row.className = "art"; row.dataset.art = aid;
   const P = "lineup." + aid;
   row.innerHTML = `<input class="an" data-path="${P}.nom" placeholder="Nom de l'artiste" aria-label="Nom de l'artiste">
-    <select data-path="${P}.type" aria-label="Type"><option value="">Type…</option>${TYPES.map(t => `<option>${t}</option>`).join("")}</select>
+    <select data-path="${P}.type" aria-label="Type"><option value="">Type…</option>${TYPES.map(t => Array.isArray(t) ? `<optgroup label="${t[0]}">${t[1].map(o => `<option>${o}</option>`).join("")}</optgroup>` : `<option>${t}</option>`).join("")}</select>
     <input type="time" data-path="${P}.debut" aria-label="Début du passage" title="Début du passage">
     <input type="time" data-path="${P}.fin" aria-label="Fin du passage" title="Fin du passage">
     ${canWrite ? `<button type="button" class="linkbtn rm" data-rm-art="${aid}">Retirer</button>` : "<span></span>"}
@@ -857,7 +857,7 @@ async function exportDocx(id) {
     let xml = await zip.file("word/document.xml").async("string");
     const h = e.h || {};
     const arts = lineupOf(e);
-    const art = arts.map(a => [a.nom || "Artiste", a.type ? `(${a.type.toLowerCase()})` : "", range(a.debut, a.fin)].filter(Boolean).join(" ")).join("  ·  ");
+    const art = arts.map(a => [a.nom || "Artiste", a.type ? `(${a.type.replace(/^(Groupe|Live|Autre)$/, m => m.toLowerCase())})` : "", range(a.debut, a.fin)].filter(Boolean).join(" ")).join("  ·  ");
     const v = {
       NUM: e.numero || "000", NOM: e.nom || "", DATE: e.date ? "(" + fmtDate(e.date, true) + ")" : "",
       ARTISTES_INLINE: art, PAD: "      ", ARTISTES_BELOW: "",
