@@ -1,0 +1,10 @@
+{
+  "name": "fiches-techniques-programmation",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@upstash/redis": "1.39.0",
+    "@vercel/blob": "2.8.2"
+  }
+}
