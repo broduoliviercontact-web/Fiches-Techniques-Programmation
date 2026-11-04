@@ -127,7 +127,7 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .slot input { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--bg); border-radius: 4px; padding: 6px 8px; font-family: var(--mono); }
 .slot input:focus { border-color: var(--accent); outline: none; }
 .lineup { display: grid; gap: 8px; }
-.art { display: grid; grid-template-columns: minmax(140px, 1fr) 150px 96px 96px auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.art { display: grid; grid-template-columns: minmax(140px, 1fr) 150px 96px 96px 92px auto; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
 .art input, .art select { width: 100%; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 4px; padding: 6px 8px; }
 .art input:focus, .art select:focus { border-color: var(--accent); outline: none; }
 .art input[type="time"] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
@@ -135,8 +135,10 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .art .ar { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font: 600 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .art .ar .attach { font: 13px var(--body); letter-spacing: 0; text-transform: none; }
 .art .rm { justify-self: end; }
+.art .dur { font: 500 13px var(--mono); color: var(--muted); white-space: nowrap; }
+.art .dur b { color: var(--ink); font-weight: 500; }
 .art .rm.armed { color: var(--danger); font-weight: 600; }
-@media (max-width: 760px) { .art { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .art .an, .art select { grid-column: 1 / -1; } .art .rm { grid-column: 1 / -1; order: 10; } }
+@media (max-width: 760px) { .art { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .art .an, .art select { grid-column: 1 / -1; } .art .rm { grid-column: 1 / -1; order: 10; } .art .dur { grid-column: 1 / -1; } }
 .lineup-empty { font-size: 13px; color: var(--muted); }
 .add-art { justify-self: start; }
 .linkbtn { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; text-decoration: underline; font-size: 13px; }
@@ -284,6 +286,15 @@ function itemsOf(L) {
 }
 function whoOf(it) { return Object.entries(it.who || {}).filter(([, v]) => v).map(([k]) => k); }
 function itemLabel(it) { return `${it.qte ? it.qte + "× " : ""}${it.des || "Matériel"}`; }
+function fmtDur(m) { if (m == null || m <= 0) return ""; const h = Math.floor(m / 60), r = m % 60; return h ? `${h}h${r ? String(r).padStart(2, "0") : ""}` : `${r} min`; }
+function setMins(a) { const x = mins(a.debut), y = mins(a.fin); if (x == null || y == null) return null; let d = y - x; if (d <= 0) d += 1440; return d; }
+// From the first set's start to the last set's end, sets after midnight included.
+function showMins(e) {
+  const base = mins(get(e, "h.ouverture")) ?? mins(get(e, "h.soundcheckFin"));
+  let lo = null, hi = null;
+  lineupOf(e).forEach(a => { const x = artMins(a.debut, base), d = setMins(a); if (x == null || d == null) return; lo = lo == null ? x : Math.min(lo, x); hi = hi == null ? x + d : Math.max(hi, x + d); });
+  return lo == null ? null : hi - lo;
+}
 function artistsLine(e) { return lineupOf(e).map(a => a.nom).filter(Boolean).join(" · "); }
 
 // What still needs attention on a fiche
@@ -530,7 +541,7 @@ function renderSheet(id) {
   sheet.addEventListener("input", (ev) => {
     const el = ev.target; if (!el.dataset.path || !canWrite) return;
     edit(el.dataset.path, el.value);
-    if (el.dataset.path.startsWith("h.") || el.dataset.path.startsWith("lineup.")) drawFrise();
+    if (el.dataset.path.startsWith("h.") || el.dataset.path.startsWith("lineup.")) { drawFrise(); syncDurations(localDoc()); }
   });
   sheet.addEventListener("change", (ev) => {
     const el = ev.target;
@@ -587,6 +598,7 @@ function artRow(aid) {
     <select data-path="${P}.type" aria-label="Type"><option value="">Type…</option>${TYPES.map(t => Array.isArray(t) ? `<optgroup label="${t[0]}">${t[1].map(o => `<option>${o}</option>`).join("")}</optgroup>` : `<option>${t}</option>`).join("")}</select>
     <input type="time" data-path="${P}.debut" aria-label="Début du passage" title="Début du passage">
     <input type="time" data-path="${P}.fin" aria-label="Fin du passage" title="Fin du passage">
+    <span class="dur" data-dur="${aid}" title="Durée du passage"></span>
     ${canWrite ? `<button type="button" class="linkbtn rm" data-rm-art="${aid}">Retirer</button>` : "<span></span>"}
     <div class="ar">Rider ${ynHtml(P + ".rider")}${attachHtml(P + ".riderFile", "Joindre le rider")}</div>
     <div class="artmat" data-artmat="${aid}"></div>`;
@@ -651,6 +663,11 @@ function addItem(k) {
   flush(); syncSheet(current);
   const inp = app.querySelector(`[data-items="${k}"] [data-item="${iid}"] .id`); if (inp) inp.focus();
 }
+function syncDurations(d) {
+  lineupOf(d).forEach(a => { const el = app.querySelector(`[data-dur="${a.id}"]`); if (el) { const m = setMins(a); el.innerHTML = m ? `Passage <b>${fmtDur(m)}</b>` : "Passage —"; } });
+  const du = app.querySelector('[data-path="h.duree"]');
+  if (du) { const m = showMins(d); du.placeholder = m ? `Auto : ${fmtDur(m)}` : "Ex. 1h30"; du.title = m ? "Calculée depuis le line-up. Tape une durée pour la remplacer." : ""; }
+}
 function addArtist() {
   const aid = "a" + newId().slice(0, 9);
   edit("lineup." + aid, { nom: "", type: "", debut: "", fin: "", rider: "", riderFile: null, createdAt: Date.now() });
@@ -662,6 +679,7 @@ function syncSheet(id) {
   const d = localDoc();
   syncLineup(d);
   syncItems(d);
+  syncDurations(d);
   const act = document.activeElement;
   app.querySelectorAll("[data-path]").forEach(el => {
     if (el === act || pending[el.dataset.path] !== undefined || inflight.has(el.dataset.path)) return;
@@ -862,7 +880,7 @@ async function exportDocx(id) {
       NUM: e.numero || "000", NOM: e.nom || "", DATE: e.date ? "(" + fmtDate(e.date, true) + ")" : "",
       ARTISTES_INLINE: art, PAD: "      ", ARTISTES_BELOW: "",
       montage: range(h.montageDebut, h.montageFin), soundcheck: range(h.soundcheckDebut, h.soundcheckFin), show: "",
-      ouverture: fmtTime(h.ouverture), duree: h.duree ? ": " + h.duree : "", fermPublic: h.fermPublic ? ": " + fmtTime(h.fermPublic) : "", fermPortes: h.fermPortes ? ": " + fmtTime(h.fermPortes) : "",
+      ouverture: fmtTime(h.ouverture), duree: (h.duree || fmtDur(showMins(e))) ? ": " + (h.duree || fmtDur(showMins(e))) : "", fermPublic: h.fermPublic ? ": " + fmtTime(h.fermPublic) : "", fermPortes: h.fermPortes ? ": " + fmtTime(h.fermPortes) : "",
       demontage: range(h.demontageDebut, h.demontageFin), commentaires: e.commentaires ? "\n" + e.commentaires : "",
       autreLabel: get(e, "loc.autre.label") || "",
     };
