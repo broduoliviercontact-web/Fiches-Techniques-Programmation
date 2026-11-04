@@ -16,7 +16,7 @@ body { margin: 0; }
   --accent: #1D6A4A; --accent-ink: #FFFFFF; --accent-soft: #D7E8DE;
   --warn: #9A5A00; --warn-bg: #F8E6C6; --ok: #22744A; --ok-bg: #D6EBDD; --danger: #B3261E; --danger-bg: #F6DAD7;
   --seg-montage: #7A8F84; --seg-sound: #C98A1B; --seg-show: #1D6A4A; --seg-demo: #9AA79F;
-  --art-a: #2F64A8; --art-b: #6D4FA8; --mom: #8C5E1A;
+  --art-a: #2F64A8; --art-b: #6D4FA8; --mom: #8C5E1A; --zone: rgba(179, 38, 30, .07);
   --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
   --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -27,14 +27,14 @@ body { margin: 0; }
   --accent: #5FC493; --accent-ink: #0B1A12; --accent-soft: #1C3328;
   --warn: #F1B254; --warn-bg: #3A2B10; --ok: #6CCB9A; --ok-bg: #173226; --danger: #F2877C; --danger-bg: #3C1A17;
   --seg-montage: #66796F; --seg-sound: #D99B2E; --seg-show: #5FC493; --seg-demo: #4C5A52;
-  --art-a: #7FA9E6; --art-b: #B79BEA; --mom: #E0B36A;
+  --art-a: #7FA9E6; --art-b: #B79BEA; --mom: #E0B36A; --zone: rgba(242, 135, 124, .09);
   color-scheme: dark; } }
 :root[data-theme="dark"] {
   --bg: #0F1512; --surface: #171F1A; --sunk: #121915; --ink: #E4EBE6; --muted: #92A198; --line: #2B3731;
   --accent: #5FC493; --accent-ink: #0B1A12; --accent-soft: #1C3328;
   --warn: #F1B254; --warn-bg: #3A2B10; --ok: #6CCB9A; --ok-bg: #173226; --danger: #F2877C; --danger-bg: #3C1A17;
   --seg-montage: #66796F; --seg-sound: #D99B2E; --seg-show: #5FC493; --seg-demo: #4C5A52;
-  --art-a: #7FA9E6; --art-b: #B79BEA; --mom: #E0B36A;
+  --art-a: #7FA9E6; --art-b: #B79BEA; --mom: #E0B36A; --zone: rgba(242, 135, 124, .09);
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -197,9 +197,25 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .art .arsep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
 .slot .one { grid-column: 2 / -1; }
 .frise { margin-top: 20px; }
-.frise .track { position: relative; height: 34px; background: var(--sunk); border-radius: 4px; overflow: hidden; }
+.frise .track { position: relative; z-index: 1; height: 34px; background: transparent; border-radius: 4px; overflow: hidden; }
 .frise .seg { position: absolute; top: 0; bottom: 0; display: flex; align-items: center; padding: 0 6px; font: 600 11px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--surface); overflow: hidden; white-space: nowrap; border-right: 1px solid var(--surface); }
-.frise .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink); }
+.frise .lanes { position: relative; padding-block: 2px; }
+.frise .bg, .frise .dl { position: absolute; inset: 0; pointer-events: none; }
+.frise .bg i { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); opacity: .55; }
+.frise .bg i.half { opacity: .25; }
+.frise .bg .zone { position: absolute; top: 0; bottom: 0; background: var(--zone); }
+.frise .dl { z-index: 2; }
+.frise .dl b { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--danger); }
+.frise .dl b.dash { border-left-style: dashed; }
+.frise .doors { position: relative; height: 34px; }
+.frise .door { position: absolute; bottom: 0; border: 0; border-left: 2px solid var(--danger); background: transparent; padding: 0 0 0 5px; color: var(--danger); font: 600 11px/14px var(--display); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; cursor: pointer; text-align: left; height: 16px; }
+.frise .door.l1 { height: 33px; }
+.frise .door.dash { border-left-style: dashed; }
+.frise .door.right { transform: translateX(-100%); border-left: 0; border-right: 2px solid var(--danger); padding: 0 5px 0 0; text-align: right; }
+.frise .door.right.dash { border-right-style: dashed; }
+.frise .door.sel { text-decoration: underline; }
+.frise .seg.planned { background: transparent !important; border: 2px dashed var(--seg-show); color: var(--seg-show); }
+.frise .seg.derived { cursor: default; }
 .frise .ticks { position: relative; height: 18px; font: 11px var(--mono); color: var(--muted); }
 .frise .ticks span { position: absolute; transform: translateX(-50%); top: 2px; }
 .frise .ph { font-size: 13px; color: var(--muted); padding: 8px 0; }
@@ -361,6 +377,11 @@ function planning(e) {
     if (n.a < p.b) { p.conflict = n.conflict = true; } else if (n.a > p.b) gaps.push({ a: p.b, b: n.a });
   }
   if (sets.some(x => x.conflict)) issues.push("Passages qui se chevauchent");
+  if (t.ouverture != null) {
+    const end = t.fermPublic ?? t.fermPortes ?? Infinity;
+    bals.forEach(x => { if (x.b > t.ouverture && x.a < end) x.warn = true; });
+    if (bals.some(x => x.warn)) issues.push("Balance après l'ouverture des portes");
+  }
   const limits = [t.fermPublic].concat(moms.filter(m => m.type === "Curfew").map(m => m.a)).filter(x => x != null);
   if (limits.length) { const L = Math.min(...limits); sets.forEach(x => { if (x.b > L) x.late = true; }); if (sets.some(x => x.late)) issues.push("Passage après la fermeture au public"); }
   return { t, sets, bals, moms, gaps, issues };
@@ -967,26 +988,42 @@ function drawFrise() {
   const doc = localDoc(); const P = planning(doc); const t = P.t;
   const vals = Object.values(t).concat(P.sets.flatMap(x => [x.a, x.b]), P.bals.flatMap(x => [x.a, x.b]), P.moms.flatMap(m => m.b != null ? [m.a, m.b] : [m.a]));
   if (vals.length < 2) { box.innerHTML = `<div class="ph">Renseigne au moins deux horaires pour voir la journée sur une frise.</div>`; drawEditor(); return; }
-  const lo = Math.floor(Math.min(...vals) / 60) * 60, hi = Math.ceil(Math.max(...vals) / 60) * 60 || lo + 60;
+  const lo = Math.floor((Math.min(...vals) - 10) / 60) * 60, hi = Math.ceil((Math.max(...vals) + 10) / 60) * 60;
   const span = Math.max(60, hi - lo), pct = v => ((v - lo) / span * 100).toFixed(3) + "%";
   const hm = v => { const m = ((v % 1440) + 1440) % 1440; return `${String(Math.floor(m / 60)).padStart(2, "0")}h${String(m % 60).padStart(2, "0")}`; };
   const sel = drawFrise.sel;
   const seg = (key, label, cls, a, b, style) => `<button type="button" class="seg ${cls}${sel === key ? " sel" : ""}" data-edit="${key}" style="left:${pct(a)};width:calc(${pct(b)} - ${pct(a)});${style}" title="${esc(label)} · ${hm(a)} – ${hm(b)}">${esc(label)}</button>`;
-  const showEnd = t.fermPublic ?? t.fermPortes;
   const main = [
     ["main:montage", "Montage", "--seg-montage", t.montageDebut, t.montageFin],
     ["main:soundcheck", "Soundcheck", "--seg-sound", t.soundcheckDebut, t.soundcheckFin],
-    ["main:show", "Show", "--seg-show", t.ouverture, showEnd],
     ["main:demontage", "Démontage", "--seg-demo", t.demontageDebut, t.demontageFin],
   ].filter(x => x[3] != null && x[4] != null && x[4] > x[3]);
-  let html = `<div class="track">`;
+
+  // Door labels above the lanes; two rows when they would collide.
+  const doors = [["ouverture", "Ouverture portes", false], ["fermPublic", "Fermeture public", false], ["fermPortes", "Fermeture portes", true]]
+    .filter(([k]) => t[k] != null).map(([k, lab, dash]) => ({ k, lab, dash, v: t[k] })).sort((x, y) => x.v - y.v);
+  let lastByRow = [-1e9, -1e9];
+  doors.forEach(dr => { const pos = (dr.v - lo) / span; dr.row = pos - lastByRow[0] < 0.17 ? 1 : 0; if (dr.row === 1 && pos - lastByRow[1] < 0.17) dr.row = 0; lastByRow[dr.row] = pos; dr.right = pos > 0.78; });
+  let html = `<div class="doors">` + doors.map(dr => `<button type="button" class="door l${dr.row}${dr.dash ? " dash" : ""}${dr.right ? " right" : ""}${sel === "door:" + dr.k ? " sel" : ""}" data-edit="door:${dr.k}" style="left:${pct(dr.v)}" title="${dr.lab} · ${hm(dr.v)}">${dr.lab} ${hm(dr.v)}</button>`).join("") + `</div>`;
+
+  // Background: hour grid and the time the public is on site.
+  const labelStep = span > 18 * 60 ? 120 : 60;
+  html += `<div class="lanes"><div class="bg">`;
+  if (t.ouverture != null) { const zEnd = t.fermPublic ?? t.fermPortes; if (zEnd != null && zEnd > t.ouverture) html += `<div class="zone" style="left:${pct(t.ouverture)};width:calc(${pct(zEnd)} - ${pct(t.ouverture)})" title="Public sur site"></div>`; }
+  for (let v = lo; v <= hi; v += 30) html += `<i class="${v % 60 ? "half" : ""}" style="left:${pct(v)}"></i>`;
+  html += `</div><div class="track">`;
   main.forEach(([k, lab, c, a, b]) => html += seg(k, lab, "", a, b, `background:var(${c})`));
-  if (t.fermPortes != null) html += `<div class="mark" style="left:${pct(t.fermPortes)}" title="Fermeture des portes ${hm(t.fermPortes)}"></div>`;
+  if (P.sets.length) {
+    const a = Math.min(...P.sets.map(x => x.a)), b = Math.max(...P.sets.map(x => x.b));
+    html += `<div class="seg derived" style="left:${pct(a)};width:calc(${pct(b)} - ${pct(a)});background:var(--seg-show)" title="Show · ${hm(a)} – ${hm(b)} · calculé depuis le line-up">Show</div>`;
+  } else if (t.ouverture != null && (t.fermPublic ?? t.fermPortes) != null) {
+    html += seg("main:show", "Show (prévu)", "planned", t.ouverture, t.fermPublic ?? t.fermPortes, "");
+  }
   html += `</div>`;
   const artColor = i => `var(${i % 2 ? "--art-b" : "--art-a"})`;
   if (P.sets.length || P.bals.length) {
     html += `<div class="track arts">`;
-    P.bals.forEach(x => html += seg("bal:" + x.id, "Balance " + x.nom, "bal", x.a, x.b, `background-color:${artColor(x.i)}`));
+    P.bals.forEach(x => html += seg("bal:" + x.id, "Balance " + x.nom + (x.warn ? " · public présent" : ""), "bal" + (x.warn ? " warn" : ""), x.a, x.b, `background-color:${artColor(x.i)}`));
     P.sets.forEach(x => html += seg("set:" + x.id, x.nom + (x.conflict ? " · chevauchement" : x.late ? " · après fermeture" : ""), x.conflict || x.late ? "warn" : "", x.a, x.b, `background-color:${artColor(x.i)}`));
     html += `</div>`;
     if (P.gaps.length) html += `<div class="gaps">` + P.gaps.map(g => `<span class="gap" style="left:${pct((g.a + g.b) / 2)}" title="Changement de plateau">↔ ${fmtDur(g.b - g.a)}</span>`).join("") + `</div>`;
@@ -1000,9 +1037,9 @@ function drawFrise() {
     });
     html += `</div>`;
   }
+  html += `<div class="dl">` + doors.map(dr => `<b class="${dr.dash ? "dash" : ""}" style="left:${pct(dr.v)}"></b>`).join("") + `</div></div>`;
   html += `<div class="ticks">`;
-  const step = span > 14 * 60 ? 180 : span > 7 * 60 ? 120 : 60;
-  for (let v = lo; v <= hi; v += step) { const hh = Math.floor(v / 60) % 24; html += `<span style="left:${pct(v)}">${String(hh).padStart(2, "0")}h</span>`; }
+  for (let v = lo; v <= hi; v += labelStep) { const hh = Math.floor(v / 60) % 24; html += `<span style="left:${pct(v)}">${String(hh).padStart(2, "0")}h</span>`; }
   html += `</div><div class="hint">Clique sur un bloc pour modifier ses horaires.</div>`;
   box.innerHTML = html;
   drawEditor();
@@ -1022,6 +1059,7 @@ function drawEditor() {
     if (kind === "main" && MAIN[id]) spec = MAIN[id];
     else if (kind === "set" && a) spec = ["Passage · " + (a.nom || "Artiste"), `lineup.${id}.debut`, `lineup.${id}.fin`, "Début", "Fin"];
     else if (kind === "bal" && a) spec = ["Balance · " + (a.nom || "Artiste"), `lineup.${id}.bdebut`, `lineup.${id}.bfin`, "Début", "Fin"];
+    else if (kind === "door") spec = { ouverture: ["Ouverture des portes", "h.ouverture", null, "Heure"], fermPublic: ["Fermeture au public", "h.fermPublic", null, "Heure"], fermPortes: ["Fermeture des portes", "h.fermPortes", null, "Heure"] }[id] || null;
     else if (kind === "mom" && m) spec = [(m.type || "Moment") + (m.label ? " · " + m.label : ""), `moments.${id}.debut`, `moments.${id}.fin`, "Heure", "Fin (facultatif)"];
   }
   if (!spec) { box.hidden = true; box.innerHTML = ""; drawEditor.key = null; return; }
@@ -1030,7 +1068,7 @@ function drawEditor() {
     drawEditor.key = key;
     box.innerHTML = `<h4>${esc(spec[0])}</h4>
       <label>${spec[3]}<input type="time" data-path="${spec[1]}"${canWrite ? "" : " disabled"}></label>
-      <label>${spec[4]}<input type="time" data-path="${spec[2]}"${canWrite ? "" : " disabled"}></label>
+      ${spec[2] ? `<label>${spec[4]}<input type="time" data-path="${spec[2]}"${canWrite ? "" : " disabled"}></label>` : ""}
       <button type="button" class="btn" data-close-edit>Fermer</button>`;
   } else box.querySelector("h4").textContent = spec[0];
   box.querySelectorAll("input").forEach(el => { if (el !== document.activeElement) el.value = get(d, el.dataset.path) || ""; });
