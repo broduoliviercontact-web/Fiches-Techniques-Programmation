@@ -208,13 +208,12 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .frise .dl { z-index: 2; }
 .frise .dl b { position: absolute; top: 0; bottom: 0; width: 0; border-left: 2px solid var(--danger); }
 .frise .dl b.dash { border-left-style: dashed; }
-.frise .doors { position: relative; height: 34px; }
-.frise .door { position: absolute; bottom: 0; border: 0; border-left: 2px solid var(--danger); background: transparent; padding: 0 0 0 5px; color: var(--danger); font: 600 11px/14px var(--display); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; cursor: pointer; text-align: left; height: 16px; }
-.frise .door.l1 { height: 33px; }
-.frise .door.dash { border-left-style: dashed; }
-.frise .door.right { transform: translateX(-100%); border-left: 0; border-right: 2px solid var(--danger); padding: 0 5px 0 0; text-align: right; }
-.frise .door.right.dash { border-right-style: dashed; }
-.frise .door.sel { text-decoration: underline; }
+.frise .doors { position: relative; }
+.frise .door { position: absolute; border: 1px solid var(--danger); background: var(--surface); border-radius: 3px; padding: 0 6px; color: var(--danger); font: 600 11px/16px var(--display); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; cursor: pointer; text-decoration: none; z-index: 1; }
+.frise .door.right { transform: translateX(-100%); }
+.frise .door:hover, .frise .door.sel { background: var(--danger); color: var(--surface); }
+.frise .stem { position: absolute; bottom: 0; width: 0; border-left: 2px solid var(--danger); }
+.frise .stem.dash { border-left-style: dashed; }
 .frise .seg.planned { background: transparent !important; border: 2px dashed var(--seg-show); color: var(--seg-show); }
 .frise .seg.derived { cursor: default; }
 .frise .ticks { position: relative; height: 18px; font: 11px var(--mono); color: var(--muted); }
@@ -1003,9 +1002,21 @@ function drawFrise() {
   // Door labels above the lanes; two rows when they would collide.
   const doors = [["ouverture", "Ouverture portes", false], ["fermPublic", "Fermeture public", false], ["fermPortes", "Fermeture portes", true]]
     .filter(([k]) => t[k] != null).map(([k, lab, dash]) => ({ k, lab, dash, v: t[k] })).sort((x, y) => x.v - y.v);
-  let lastByRow = [-1e9, -1e9];
-  doors.forEach(dr => { const pos = (dr.v - lo) / span; dr.row = pos - lastByRow[0] < 0.17 ? 1 : 0; if (dr.row === 1 && pos - lastByRow[1] < 0.17) dr.row = 0; lastByRow[dr.row] = pos; dr.right = pos > 0.78; });
-  let html = `<div class="doors">` + doors.map(dr => `<button type="button" class="door l${dr.row}${dr.dash ? " dash" : ""}${dr.right ? " right" : ""}${sel === "door:" + dr.k ? " sel" : ""}" data-edit="door:${dr.k}" style="left:${pct(dr.v)}" title="${dr.lab} · ${hm(dr.v)}">${dr.lab} ${hm(dr.v)}</button>`).join("") + `</div>`;
+  // Each label is placed on the first row where it does not touch another one (estimated width in px).
+  const W = box.clientWidth || 800, ROW = 22, rows = [];
+  doors.forEach(dr => {
+    const x = (dr.v - lo) / span * W, w = (dr.lab.length + 6) * 7 + 14;
+    dr.right = x + w > W;
+    const a = dr.right ? x - w : x, b = dr.right ? x : x + w;
+    let r = 0; while (rows[r] && rows[r].some(([p, q]) => a < q + 8 && b > p - 8)) r++;
+    (rows[r] = rows[r] || []).push([a, b]); dr.row = r;
+  });
+  const nRows = Math.max(1, rows.length), H = nRows * ROW + 6;
+  let html = `<div class="doors" style="height:${H}px">` + doors.map(dr => {
+    const top = (nRows - 1 - dr.row) * ROW;
+    return `<span class="stem${dr.dash ? " dash" : ""}" style="left:${pct(dr.v)};top:${top + 16}px"></span>` +
+      `<button type="button" class="door${dr.right ? " right" : ""}${sel === "door:" + dr.k ? " sel" : ""}" data-edit="door:${dr.k}" style="left:${pct(dr.v)};top:${top}px" title="${dr.lab} · ${hm(dr.v)}">${dr.lab} ${hm(dr.v)}</button>`;
+  }).join("") + `</div>`;
 
   // Background: hour grid and the time the public is on site.
   const labelStep = span > 18 * 60 ? 120 : 60;
