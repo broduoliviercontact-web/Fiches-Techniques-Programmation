@@ -208,7 +208,7 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .mom .rm.armed { color: var(--danger); font-weight: 600; }
 @media (max-width: 760px) { .mom { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .mom select, .mom .ml { grid-column: 1 / -1; } .mom .rm { grid-column: 1 / -1; justify-self: end; } }
 .art .btimes { display: inline-flex; gap: 6px; align-items: center; text-transform: none; letter-spacing: 0; }
-.art .btimes input { width: 104px; }
+.art .btimes input, .art .ar input.arr { width: 104px; }
 .art .arsep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
 .slot .one { grid-column: 2 / -1; }
 .frise { margin-top: 20px; }
@@ -385,6 +385,7 @@ function planning(e) {
   const sets = arts.map((x, i) => { const [a, b] = span(x.debut, x.fin); return { id: x.id, nom: x.nom || "Artiste", i, a, b, color: x.color || "" }; }).filter(x => x.a != null && x.b != null).sort((x, y) => x.a - y.a);
   const bals = arts.filter(x => x.balance === "oui").map((x, i) => { const [a, b] = span(x.bdebut, x.bfin); return { id: x.id, nom: x.nom || "Artiste", i: arts.indexOf(x), a, b, color: x.color || "" }; }).filter(x => x.a != null && x.b != null);
   const moms = momentsOf(e).map(m => { const [a, b] = span(m.debut, m.fin); return { ...m, a, b }; }).filter(m => m.a != null);
+  const arrs = arts.filter(x => x.arrivee).map(x => ({ id: x.id, nom: x.nom || "Artiste", a: rel(mins(x.arrivee)) })).filter(x => x.a != null);
   const gaps = [], issues = [];
   for (let k = 1; k < sets.length; k++) {
     const p = sets[k - 1], n = sets[k];
@@ -398,7 +399,7 @@ function planning(e) {
   }
   const limits = [t.fermPublic].concat(moms.filter(m => m.type === "Curfew").map(m => m.a)).filter(x => x != null);
   if (limits.length) { const L = Math.min(...limits); sets.forEach(x => { if (x.b > L) x.late = true; }); if (sets.some(x => x.late)) issues.push("Passage après la fermeture au public"); }
-  return { t, sets, bals, moms, gaps, issues };
+  return { t, sets, bals, moms, arrs, gaps, issues };
 }
 function artistsLine(e) { return lineupOf(e).map(a => a.nom).filter(Boolean).join(" · "); }
 
@@ -729,6 +730,7 @@ function artRow(aid) {
     <span class="dur" data-dur="${aid}" title="Durée du passage"></span>
     ${canWrite ? `<button type="button" class="linkbtn rm" data-rm-art="${aid}">Retirer</button>` : "<span></span>"}
     <div class="ar">Rider ${ynHtml(P + ".rider")}${attachHtml(P + ".riderFile", "Joindre le rider")}
+      <span class="arsep"></span>Arrivée <input type="time" class="arr" data-path="${P}.arrivee" aria-label="Heure d'arrivée" title="Heure d'arrivée">
       <span class="arsep"></span>Balance ${ynHtml(P + ".balance")}
       <span class="btimes" data-btimes="${aid}"><input type="time" data-path="${P}.bdebut" aria-label="Début de la balance" title="Début de la balance"><input type="time" data-path="${P}.bfin" aria-label="Fin de la balance" title="Fin de la balance"><span class="dur" data-bdur="${aid}"></span></span>
       <span class="subtle" data-nobal="${aid}" style="text-transform:none;letter-spacing:0;font-weight:400">Pas de balance</span></div>
@@ -1018,7 +1020,7 @@ function mins(t) { if (!t) return null; const [h, m] = t.split(":").map(Number);
 function drawFrise() {
   const box = $("#frise"); if (!box) return;
   const doc = localDoc(); const P = planning(doc); const t = P.t;
-  const vals = Object.values(t).concat(P.sets.flatMap(x => [x.a, x.b]), P.bals.flatMap(x => [x.a, x.b]), P.moms.flatMap(m => m.b != null ? [m.a, m.b] : [m.a]));
+  const vals = Object.values(t).concat(P.sets.flatMap(x => [x.a, x.b]), P.bals.flatMap(x => [x.a, x.b]), P.moms.flatMap(m => m.b != null ? [m.a, m.b] : [m.a]), P.arrs.map(x => x.a));
   if (vals.length < 2) { box.innerHTML = `<div class="ph">Renseigne au moins deux horaires pour voir la journée sur une frise.</div>`; drawEditor(); return; }
   const lo = Math.floor((Math.min(...vals) - 10) / 60) * 60, hi = Math.ceil((Math.max(...vals) + 10) / 60) * 60;
   const span = Math.max(60, hi - lo), pct = v => ((v - lo) / span * 100).toFixed(3) + "%";
@@ -1073,8 +1075,9 @@ function drawFrise() {
     html += `</div>`;
     if (P.gaps.length) html += `<div class="gaps">` + P.gaps.map(g => `<span class="gap" style="left:${pct((g.a + g.b) / 2)}" title="Changement de plateau">↔ ${fmtDur(g.b - g.a)}</span>`).join("") + `</div>`;
   }
-  if (P.moms.length) {
+  if (P.moms.length || P.arrs.length) {
     html += `<div class="track moms">`;
+    P.arrs.forEach(x => html += `<button type="button" class="pin${sel === "arr:" + x.id ? " sel" : ""}" data-edit="arr:${x.id}" style="left:${pct(x.a)}" title="Arrivée ${esc(x.nom)} · ${hm(x.a)}">Arrivée ${esc(x.nom)}</button>`);
     P.moms.forEach(m => {
       const lab = (m.type || "Moment") + (m.label ? " · " + m.label : "");
       html += m.b != null ? seg("mom:" + m.id, lab, "mom" + (m.color ? " custom" : ""), m.a, m.b, m.color ? `background:${m.color}` : "")
@@ -1116,11 +1119,12 @@ function drawEditor() {
     const [kind, id] = key.split(":");
     const MAIN = { montage: ["Montage", "h.montageDebut", "h.montageFin", "Début", "Fin"], soundcheck: ["Soundcheck", "h.soundcheckDebut", "h.soundcheckFin", "Début", "Fin"],
       show: ["Show", "h.ouverture", "h.fermPublic", "Ouverture des portes", "Fermeture au public"], demontage: ["Démontage", "h.demontageDebut", "h.demontageFin", "Début", "Fin"] };
-    const a = (kind === "set" || kind === "bal") ? get(d, "lineup." + id) : null;
+    const a = (kind === "set" || kind === "bal" || kind === "arr") ? get(d, "lineup." + id) : null;
     const m = kind === "mom" ? get(d, "moments." + id) : null;
     if (kind === "main" && MAIN[id]) spec = MAIN[id];
     else if (kind === "set" && a) spec = ["Passage · " + (a.nom || "Artiste"), `lineup.${id}.debut`, `lineup.${id}.fin`, "Début", "Fin"];
     else if (kind === "bal" && a) spec = ["Balance · " + (a.nom || "Artiste"), `lineup.${id}.bdebut`, `lineup.${id}.bfin`, "Début", "Fin"];
+    else if (kind === "arr" && a) spec = ["Arrivée · " + (a.nom || "Artiste"), `lineup.${id}.arrivee`, null, "Heure"];
     else if (kind === "door") spec = { ouverture: ["Ouverture des portes", "h.ouverture", null, "Heure"], fermPublic: ["Fermeture au public", "h.fermPublic", null, "Heure"], fermPortes: ["Fermeture des portes", "h.fermPortes", null, "Heure"] }[id] || null;
     else if (kind === "mom" && m) spec = [(m.type || "Moment") + (m.label ? " · " + m.label : ""), `moments.${id}.debut`, `moments.${id}.fin`, "Heure", "Fin (facultatif)"];
   }
@@ -1210,7 +1214,7 @@ async function exportDocx(id) {
     const h = e.h || {};
     const arts = lineupOf(e);
     const bal = a => a.balance === "oui" ? (range(a.bdebut, a.bfin) ? "balance " + range(a.bdebut, a.bfin) : "balance") : a.balance === "non" ? "pas de balance" : "";
-    const art = arts.map(a => [a.nom || "Artiste", a.type ? `(${a.type.replace(/^(Groupe|Live|Autre)$/, m => m.toLowerCase())})` : "", range(a.debut, a.fin), bal(a) ? `[${bal(a)}]` : ""].filter(Boolean).join(" ")).join("  ·  ");
+    const art = arts.map(a => [a.nom || "Artiste", a.type ? `(${a.type.replace(/^(Groupe|Live|Autre)$/, m => m.toLowerCase())})` : "", range(a.debut, a.fin), (x => x ? `[${x}]` : "")([a.arrivee ? "arrivée " + fmtTime(a.arrivee) : "", bal(a)].filter(Boolean).join(", "))].filter(Boolean).join(" ")).join("  ·  ");
     const momTxt = momentsOf(e).filter(m => m.debut).map(m => `•  ${m.fin ? range(m.debut, m.fin) : fmtTime(m.debut)}   ${m.type || "Moment"}${m.label ? " — " + m.label : ""}`).join("\n");
     const v = {
       NUM: e.numero || "000", NOM: e.nom || "", DATE: e.date ? "(" + fmtDate(e.date, true) + ")" : "",
