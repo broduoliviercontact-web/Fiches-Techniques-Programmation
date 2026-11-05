@@ -186,6 +186,12 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .frise .gap { position: absolute; top: 3px; transform: translateX(-50%); font: 10px var(--mono); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 99px; padding: 0 5px; white-space: nowrap; pointer-events: none; z-index: 3; }
 .frise .pin { position: absolute; top: 0; bottom: 0; border: 0; border-left: 2px solid var(--mom); padding: 0 0 0 5px; background: transparent; color: var(--mom); font: 600 11px var(--display); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
 .frise .pin.sel { text-decoration: underline; }
+.frise { overflow-x: clip; }
+.frise .pins { position: relative; z-index: 1; margin-top: 4px; }
+.frise .pill { --pc: var(--mom); position: absolute; height: 19px; border: 1px solid var(--pc); border-left-width: 3px; border-radius: 3px; background: var(--surface); color: var(--pc); padding: 0 6px; font: 600 11px/17px var(--display); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+.frise .pill.right { transform: translateX(-100%); border-left-width: 1px; border-right-width: 3px; }
+.frise .pill:hover, .frise .pill.sel { background: var(--pc); color: var(--surface); }
+.fedit .fe-fields { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
 .frise .hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .fedit { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
 .fedit .sw { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -1037,7 +1043,7 @@ function drawFrise() {
   const doors = [["ouverture", "Ouverture portes", false], ["fermPublic", "Fermeture public", false], ["fermPortes", "Fermeture portes", true]]
     .filter(([k]) => t[k] != null).map(([k, lab, dash]) => ({ k, lab, dash, v: t[k] })).sort((x, y) => x.v - y.v);
   // Each label is placed on the first row where it does not touch another one (estimated width in px).
-  const W = box.clientWidth || 800, ROW = 22, rows = [];
+  const W = box.clientWidth || 800, ROW = 22, rows = []; lastFriseW = W;
   doors.forEach(dr => {
     const x = (dr.v - lo) / span * W, w = (dr.lab.length + 6) * 7 + 14;
     dr.right = x + w > W;
@@ -1075,16 +1081,36 @@ function drawFrise() {
     html += `</div>`;
     if (P.gaps.length) html += `<div class="gaps">` + P.gaps.map(g => `<span class="gap" style="left:${pct((g.a + g.b) / 2)}" title="Changement de plateau">↔ ${fmtDur(g.b - g.a)}</span>`).join("") + `</div>`;
   }
-  if (P.moms.length || P.arrs.length) {
-    html += `<div class="track moms">`;
-    P.arrs.forEach(x => html += `<button type="button" class="pin${sel === "arr:" + x.id ? " sel" : ""}" data-edit="arr:${x.id}" style="left:${pct(x.a)}" title="Arrivée ${esc(x.nom)} · ${hm(x.a)}">Arrivée ${esc(x.nom)}</button>`);
-    P.moms.forEach(m => {
-      const lab = (m.type || "Moment") + (m.label ? " · " + m.label : "");
-      html += m.b != null ? seg("mom:" + m.id, lab, "mom" + (m.color ? " custom" : ""), m.a, m.b, m.color ? `background:${m.color}` : "")
-        : `<button type="button" class="pin${sel === "mom:" + m.id ? " sel" : ""}" data-edit="mom:${m.id}" style="left:${pct(m.a)}${m.color ? `;color:${m.color};border-left-color:${m.color}` : ""}" title="${esc(lab)} · ${hm(m.a)}">${esc(lab)}</button>`;
+  // Point markers (arrivals, moments without an end): pills stacked on extra rows when they would touch.
+  const pinsHtml = (items) => {
+    const rows = [], RH = 21;
+    items.sort((x, y) => x.v - y.v).forEach(it => {
+      const x = (it.v - lo) / span * W, w = it.label.length * 7 + 22;
+      it.right = x + w > W;
+      const a = it.right ? x - w : x, b = it.right ? x : x + w;
+      let r = 0; while (rows[r] && rows[r].some(([p, q]) => a < q + 6 && b > p - 6)) r++;
+      (rows[r] = rows[r] || []).push([a, b]); it.row = r;
     });
+    return `<div class="pins" style="height:${Math.max(1, rows.length) * RH}px">` + items.map(it =>
+      `<button type="button" class="pill${it.right ? " right" : ""}${sel === it.key ? " sel" : ""}" data-edit="${it.key}" style="left:${pct(it.v)};top:${it.row * RH}px;--pc:${it.color}" title="${esc(it.title)}">${esc(it.label)}</button>`).join("") + `</div>`;
+  };
+  if (P.arrs.length) {
+    const groups = new Map();
+    P.arrs.forEach(x => { if (!groups.has(x.a)) groups.set(x.a, []); groups.get(x.a).push(x); });
+    html += pinsHtml([...groups.entries()].map(([v, xs]) => {
+      const names = xs.map(x => x.nom).join(", ");
+      const shown = xs.length === 1 || names.length <= 32 ? names : `${xs.length} artistes`;
+      return { key: xs.length === 1 ? "arr:" + xs[0].id : "arrg:" + xs.map(x => x.id).join("+"), v, color: "var(--art-a)",
+        label: `Arrivée ${hm(v)} · ${shown}`, title: `Arrivée ${hm(v)} · ${names}` };
+    }));
+  }
+  const blockMoms = P.moms.filter(m => m.b != null), pointMoms = P.moms.filter(m => m.b == null);
+  if (blockMoms.length) {
+    html += `<div class="track moms">`;
+    blockMoms.forEach(m => { const lab = (m.type || "Moment") + (m.label ? " · " + m.label : ""); html += seg("mom:" + m.id, lab, "mom" + (m.color ? " custom" : ""), m.a, m.b, m.color ? `background:${m.color}` : ""); });
     html += `</div>`;
   }
+  if (pointMoms.length) html += pinsHtml(pointMoms.map(m => { const lab = (m.type || "Moment") + (m.label ? " · " + m.label : ""); return { key: "mom:" + m.id, v: m.a, color: m.color || "var(--mom)", label: `${lab} ${hm(m.a)}`, title: `${lab} · ${hm(m.a)}` }; }));
   html += `<div class="dl">` + doors.map(dr => `<b class="${dr.dash ? "dash" : ""}" style="left:${pct(dr.v)}"></b>`).join("") + `</div></div>`;
   html += `<div class="ticks">`;
   for (let v = lo; v <= hi; v += labelStep) { const hh = Math.floor(v / 60) % 24; html += `<span style="left:${pct(v)}">${String(hh).padStart(2, "0")}h</span>`; }
@@ -1106,39 +1132,50 @@ function deleteSlot(key) {
   const [kind, id] = key.split(":"), spec = drawEditor.spec;
   if (kind === "mom") edit("moments." + id, null);
   else if (kind === "bal") { edit(`lineup.${id}.balance`, ""); edit(`lineup.${id}.bdebut`, ""); edit(`lineup.${id}.bfin`, ""); }
-  else if (spec) { edit(spec[1], ""); if (spec[2]) edit(spec[2], ""); }
+  else if (spec) spec.fields.forEach(([, p]) => edit(p, ""));
   flush(); drawFrise.sel = null; syncSheet(current);
 }
 
+// Labels are placed in pixels, so redraw when the width changes.
+let lastFriseW = 0;
+window.addEventListener("resize", () => { clearTimeout(drawFrise.rt); drawFrise.rt = setTimeout(() => { const f = $("#frise"); if (f && f.clientWidth !== lastFriseW) drawFrise(); }, 120); });
+
 // Small editor under the timeline for the block that was clicked.
+function editorSpec(key, d) {
+  if (!key) return null;
+  const [kind, id] = key.split(":");
+  const two = (title, p1, p2, l1 = "Début", l2 = "Fin") => ({ title, fields: [[l1, p1], [l2, p2]] });
+  const MAIN = { montage: two("Montage", "h.montageDebut", "h.montageFin"), soundcheck: two("Soundcheck", "h.soundcheckDebut", "h.soundcheckFin"),
+    show: two("Show", "h.ouverture", "h.fermPublic", "Ouverture des portes", "Fermeture au public"), demontage: two("Démontage", "h.demontageDebut", "h.demontageFin") };
+  const DOORS = { ouverture: "Ouverture des portes", fermPublic: "Fermeture au public", fermPortes: "Fermeture des portes" };
+  const a = ["set", "bal", "arr"].includes(kind) ? get(d, "lineup." + id) : null;
+  const m = kind === "mom" ? get(d, "moments." + id) : null;
+  if (kind === "main") return MAIN[id] || null;
+  if (kind === "set" && a) return two("Passage · " + (a.nom || "Artiste"), `lineup.${id}.debut`, `lineup.${id}.fin`);
+  if (kind === "bal" && a) return two("Balance · " + (a.nom || "Artiste"), `lineup.${id}.bdebut`, `lineup.${id}.bfin`);
+  if (kind === "arr" && a) return { title: "Arrivée · " + (a.nom || "Artiste"), fields: [["Heure", `lineup.${id}.arrivee`]] };
+  if (kind === "arrg") {
+    const ids = id.split("+").filter(x => get(d, "lineup." + x));
+    return ids.length ? { title: "Arrivées", fields: ids.map(x => [get(d, `lineup.${x}.nom`) || "Artiste", `lineup.${x}.arrivee`]) } : null;
+  }
+  if (kind === "door" && DOORS[id]) return { title: DOORS[id], fields: [["Heure", "h." + id]] };
+  if (kind === "mom" && m) return two((m.type || "Moment") + (m.label ? " · " + m.label : ""), `moments.${id}.debut`, `moments.${id}.fin`, "Heure", "Fin (facultatif)");
+  return null;
+}
 function drawEditor() {
   const box = $("#frise-edit"); if (!box) return;
   const key = drawFrise.sel, d = localDoc();
-  let spec = null;
-  if (key) {
-    const [kind, id] = key.split(":");
-    const MAIN = { montage: ["Montage", "h.montageDebut", "h.montageFin", "Début", "Fin"], soundcheck: ["Soundcheck", "h.soundcheckDebut", "h.soundcheckFin", "Début", "Fin"],
-      show: ["Show", "h.ouverture", "h.fermPublic", "Ouverture des portes", "Fermeture au public"], demontage: ["Démontage", "h.demontageDebut", "h.demontageFin", "Début", "Fin"] };
-    const a = (kind === "set" || kind === "bal" || kind === "arr") ? get(d, "lineup." + id) : null;
-    const m = kind === "mom" ? get(d, "moments." + id) : null;
-    if (kind === "main" && MAIN[id]) spec = MAIN[id];
-    else if (kind === "set" && a) spec = ["Passage · " + (a.nom || "Artiste"), `lineup.${id}.debut`, `lineup.${id}.fin`, "Début", "Fin"];
-    else if (kind === "bal" && a) spec = ["Balance · " + (a.nom || "Artiste"), `lineup.${id}.bdebut`, `lineup.${id}.bfin`, "Début", "Fin"];
-    else if (kind === "arr" && a) spec = ["Arrivée · " + (a.nom || "Artiste"), `lineup.${id}.arrivee`, null, "Heure"];
-    else if (kind === "door") spec = { ouverture: ["Ouverture des portes", "h.ouverture", null, "Heure"], fermPublic: ["Fermeture au public", "h.fermPublic", null, "Heure"], fermPortes: ["Fermeture des portes", "h.fermPortes", null, "Heure"] }[id] || null;
-    else if (kind === "mom" && m) spec = [(m.type || "Moment") + (m.label ? " · " + m.label : ""), `moments.${id}.debut`, `moments.${id}.fin`, "Heure", "Fin (facultatif)"];
-  }
+  const spec = editorSpec(key, d);
   if (!spec) { box.hidden = true; box.innerHTML = ""; drawEditor.key = null; return; }
   box.hidden = false;
   const cpath = slotColorPath(key);
   if (drawEditor.key !== key) {
     drawEditor.key = key;
-    box.innerHTML = `<h4>${esc(spec[0])}</h4>
-      <label>${spec[3]}<input type="time" data-path="${spec[1]}"${canWrite ? "" : " disabled"}></label>
-      ${spec[2] ? `<label>${spec[4]}<input type="time" data-path="${spec[2]}"${canWrite ? "" : " disabled"}></label>` : ""}
+    box.innerHTML = `<h4>${esc(spec.title)}</h4>
+      <div class="fe-fields">${spec.fields.map(([l, p]) => `<label>${esc(l)}<input type="time" data-path="${p}"${canWrite ? "" : " disabled"}></label>`).join("")}</div>
       ${cpath && canWrite ? `<div class="sw"><span>Couleur</span><button type="button" class="def" data-color="${cpath}|" title="Couleur par défaut" aria-label="Couleur par défaut">↺</button>${SWATCHES.map(([c, n]) => `<button type="button" data-color="${cpath}|${c}" style="background:${c}" title="${n}" aria-label="${n}"></button>`).join("")}</div>` : ""}
       <div class="fe-act">${canWrite ? `<button type="button" class="btn danger" data-del-slot="${key}">Supprimer</button>` : ""}<button type="button" class="btn" data-close-edit>Fermer</button></div>`;
-  } else box.querySelector("h4").textContent = spec[0];
+  } else box.querySelector("h4").textContent = spec.title;
   if (cpath) { const cur = get(d, cpath) || ""; box.querySelectorAll("[data-color]").forEach(b => b.classList.toggle("on", b.dataset.color.split("|")[1] === cur)); }
   drawEditor.spec = spec;
   box.querySelectorAll("input").forEach(el => { if (el !== document.activeElement) el.value = get(d, el.dataset.path) || ""; });
