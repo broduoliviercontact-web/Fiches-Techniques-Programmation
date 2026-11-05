@@ -212,6 +212,35 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .crow.k-gap .cl { color: var(--muted); font-size: 13px; }
 .crow.k-show .cl b { text-transform: uppercase; letter-spacing: .06em; }
 .crow .cw { color: var(--danger); font-size: 12px; font-weight: 600; margin-left: 8px; }
+.agenda { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--surface); }
+.ag-head, .ag-body { display: grid; grid-template-columns: 52px repeat(3, minmax(0, 1fr)); }
+.ag-head { border-bottom: 1px solid var(--line); background: var(--bg); }
+.ag-head div { padding: 6px 8px; font: 600 12px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); border-left: 1px solid var(--line); }
+.ag-head div:first-child { border-left: 0; }
+.ag-body { position: relative; }
+.ag-hours { position: relative; }
+.ag-col { position: relative; border-left: 1px solid var(--line); min-width: 0; }
+.ag-layer { position: absolute; top: 0; bottom: 0; left: 52px; right: 0; pointer-events: none; }
+.ag-layer i { position: absolute; left: 0; right: 0; height: 1px; background: var(--line); opacity: .6; }
+.ag-layer i.half { opacity: .25; }
+.ag-layer .zone { position: absolute; left: 0; right: 0; background: var(--zone); }
+.ag-hour { position: absolute; left: 0; width: 52px; padding-right: 6px; text-align: right; font: 11px var(--mono); color: var(--muted); transform: translateY(-50%); }
+.ag-door { position: absolute; left: 52px; right: 0; height: 0; border-top: 2px solid var(--danger); z-index: 3; }
+.ag-door.dash { border-top-style: dashed; }
+.ag-door button { position: absolute; right: 4px; top: -10px; border: 1px solid var(--danger); background: var(--surface); color: var(--danger); border-radius: 3px; padding: 0 6px; font: 600 11px/16px var(--display); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+.ag-door button:hover, .ag-door button.sel { background: var(--danger); color: var(--surface); }
+.ag-b { position: absolute; z-index: 1; border: 0; border-radius: 4px; padding: 3px 6px; overflow: hidden; text-align: left; color: var(--surface); font: 12px/1.25 var(--body); cursor: pointer; box-shadow: 0 0 0 1px var(--surface); }
+.ag-b b { display: block; font: 600 12px/1.2 var(--display); letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ag-b span { font-family: var(--mono); font-size: 11px; opacity: .85; white-space: nowrap; }
+.ag-b.custom { color: #fff; }
+.ag-b.bal { background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgba(255,255,255,.28) 6px 12px); }
+.ag-b.warn { background-color: var(--danger) !important; background-image: none; }
+.ag-b.derived { cursor: default; }
+.ag-b.planned { background: transparent !important; border: 2px dashed var(--seg-show); color: var(--seg-show); }
+.ag-b.sel { box-shadow: inset 0 0 0 2px var(--ink); }
+.ag-p { --pc: var(--mom); position: absolute; z-index: 2; height: 20px; border: 1px solid var(--pc); border-left-width: 3px; border-radius: 3px; background: var(--surface); color: var(--pc); padding: 0 6px; font: 600 11px/18px var(--display); letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; cursor: pointer; }
+.ag-p:hover, .ag-p.sel { background: var(--pc); color: var(--surface); }
+@media (max-width: 560px) { .ag-head, .ag-body { grid-template-columns: 40px repeat(3, minmax(0, 1fr)); } .ag-layer, .ag-door { left: 40px; } .ag-hour { width: 40px; } .ag-b { padding: 2px 4px; } }
 @media (max-width: 560px) { .crow { grid-template-columns: 96px minmax(0, 1fr); } .crow .cd { grid-column: 2; text-align: left; } }
 .frise .pill { --pc: var(--mom); position: absolute; height: 19px; border: 1px solid var(--pc); border-left-width: 3px; border-radius: 3px; background: var(--surface); color: var(--pc); padding: 0 6px; font: 600 11px/17px var(--display); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
 .frise .pill.right { transform: translateX(-100%); border-left-width: 1px; border-right-width: 3px; }
@@ -662,11 +691,12 @@ function renderSheet(id) {
           ${canWrite ? `<button type="button" class="btn add-art" id="add-mom">+ Ajouter un moment (repas, arrivée…)</button>` : ""}
         </div>
         <div class="viewbar">
-          <div class="viewsw" role="group" aria-label="Affichage de la journée"><button type="button" data-view="frise">Frise</button><button type="button" data-view="cond">Conducteur</button></div>
+          <div class="viewsw" role="group" aria-label="Affichage de la journée"><button type="button" data-view="frise">Frise</button><button type="button" data-view="agenda">Agenda</button><button type="button" data-view="cond">Conducteur</button></div>
           <span class="sp"></span>
           <button type="button" class="btn" id="export-cond" hidden>Exporter le conducteur (Word)</button>
         </div>
         <div class="frise" id="frise"></div>
+        <div class="agenda" id="agenda" hidden></div>
         <div class="cond" id="conducteur" hidden></div>
         <div class="fedit" id="frise-edit" hidden></div>
         <details class="communmat" id="communmat" hidden></details>
@@ -1060,7 +1090,7 @@ function autofillContact(slot, nom) {
 // ---------- timeline ----------
 function mins(t) { if (!t) return null; const [h, m] = t.split(":").map(Number); return h * 60 + m; }
 // ---------- day view: timeline or run sheet ----------
-function getView() { try { return localStorage.getItem("ftp-view") === "cond" ? "cond" : "frise"; } catch (e) { return "frise"; } }
+function getView() { try { const v = localStorage.getItem("ftp-view"); return v === "cond" || v === "agenda" ? v : "frise"; } catch (e) { return "frise"; } }
 function setView(v) {
   try { localStorage.setItem("ftp-view", v); } catch (e) {}
   applyView(); drawFrise();
@@ -1068,8 +1098,8 @@ function setView(v) {
 function applyView() {
   const v = getView();
   app.querySelectorAll("[data-view]").forEach(b => { b.classList.toggle("on", b.dataset.view === v); b.setAttribute("aria-pressed", b.dataset.view === v); });
-  const f = $("#frise"), c = $("#conducteur"), x = $("#export-cond");
-  if (f) f.hidden = v !== "frise"; if (c) c.hidden = v !== "cond"; if (x) x.hidden = v !== "cond";
+  const f = $("#frise"), c = $("#conducteur"), g = $("#agenda"), x = $("#export-cond");
+  if (f) f.hidden = v !== "frise"; if (c) c.hidden = v !== "cond"; if (g) g.hidden = v !== "agenda"; if (x) x.hidden = v !== "cond";
 }
 
 // Every element of the day in time order.
@@ -1105,9 +1135,59 @@ function drawConductor(d) {
   }).join("");
 }
 
+// Vertical day: hours going down, three columns; overlapping items share their column side by side.
+function drawAgenda(d) {
+  const box = $("#agenda"); if (!box || box.hidden) return;
+  const P = planning(d), t = P.t, sel = drawFrise.sel, PPM = 1.1, PT = 22 / PPM;
+  const artColor = i => `var(${i % 2 ? "--art-b" : "--art-a"})`;
+  const cols = [[], [], []];
+  const custom = d.colors || {};
+  [["montage", "Montage", "--seg-montage", "montageDebut", "montageFin"], ["soundcheck", "Soundcheck", "--seg-sound", "soundcheckDebut", "soundcheckFin"], ["demontage", "Démontage", "--seg-demo", "demontageDebut", "demontageFin"]]
+    .forEach(([k, lab, c, x, y]) => { if (t[x] != null && t[y] != null && t[y] > t[x]) cols[0].push({ a: t[x], b: t[y], label: lab, key: "main:" + k, color: custom[k] || `var(${c})`, cls: custom[k] ? "custom" : "" }); });
+  if (P.sets.length) cols[0].push({ a: Math.min(...P.sets.map(x => x.a)), b: Math.max(...P.sets.map(x => x.b)), label: "Show", color: "var(--seg-show)", cls: "derived" });
+  else if (t.ouverture != null && (t.fermPublic ?? t.fermPortes) != null) cols[0].push({ a: t.ouverture, b: t.fermPublic ?? t.fermPortes, label: "Show (prévu)", key: "main:show", cls: "planned" });
+  P.bals.forEach(x => cols[1].push({ a: x.a, b: x.b, label: "Balance " + x.nom, key: "bal:" + x.id, color: x.color || artColor(x.i), cls: "bal" + (x.warn ? " warn" : "") + (x.color ? " custom" : "") }));
+  P.sets.forEach(x => cols[1].push({ a: x.a, b: x.b, label: x.nom, key: "set:" + x.id, color: x.color || artColor(x.i), cls: (x.conflict || x.late ? "warn" : "") + (x.color ? " custom" : "") }));
+  const groups = new Map(); P.arrs.forEach(x => { if (!groups.has(x.a)) groups.set(x.a, []); groups.get(x.a).push(x); });
+  groups.forEach((xs, a) => cols[1].push({ a, point: true, label: `${hmOf(a)} Arrivée ${xs.map(x => x.nom).join(", ")}`, key: xs.length === 1 ? "arr:" + xs[0].id : "arrg:" + xs.map(x => x.id).join("+"), color: "var(--art-a)" }));
+  P.moms.forEach(m => { const lab = (m.type || "Moment") + (m.label ? " · " + m.label : ""); cols[2].push(m.b != null ? { a: m.a, b: m.b, label: lab, key: "mom:" + m.id, color: m.color || "var(--mom)", cls: m.color ? "custom" : "" } : { a: m.a, point: true, label: `${hmOf(m.a)} ${lab}`, key: "mom:" + m.id, color: m.color || "var(--mom)" }); });
+  const all = cols.flat(), doors = [["ouverture", "Ouverture portes"], ["fermPublic", "Fermeture public"], ["fermPortes", "Fermeture portes"]].filter(([k]) => t[k] != null);
+  const vals = all.flatMap(x => [x.a, x.point ? x.a + PT : x.b]).concat(doors.map(([k]) => t[k]));
+  if (!vals.length) { box.innerHTML = `<div class="crow"><span class="cl subtle">Renseigne des horaires, des passages ou des moments pour voir la journée en agenda.</span></div>`; return; }
+  const lo = Math.floor((Math.min(...vals) - 10) / 60) * 60, hi = Math.ceil((Math.max(...vals) + 10) / 60) * 60;
+  const y = v => ((v - lo) * PPM).toFixed(1) + "px", H = (hi - lo) * PPM;
+  const layout = (items) => {
+    items.forEach(it => { it.e = it.point ? it.a + PT : it.b; });
+    items.sort((p, q) => p.a - q.a || q.e - p.e);
+    let cluster = [], end = -1e9; const done = [];
+    const close = () => { const lanes = []; cluster.forEach(it => { let l = lanes.findIndex(e => e <= it.a); if (l < 0) { l = lanes.length; lanes.push(0); } lanes[l] = it.e; it.lane = l; }); cluster.forEach(it => it.n = lanes.length); done.push(...cluster); cluster = []; };
+    items.forEach(it => { if (it.a >= end && cluster.length) close(); cluster.push(it); end = Math.max(end, it.e); });
+    if (cluster.length) close();
+    return done;
+  };
+  const itemHtml = it => {
+    const pos = `top:${y(it.a)};left:calc(${it.lane} * 100% / ${it.n} + 3px);width:calc(100% / ${it.n} - 6px)`;
+    const s2 = it.key && sel === it.key ? " sel" : "";
+    if (it.point) return `<button type="button" class="ag-p${s2}" data-edit="${it.key}" style="${pos};--pc:${it.color}" title="${esc(it.label)}">${esc(it.label)}</button>`;
+    const tag = it.key ? `button type="button" data-edit="${it.key}"` : "div";
+    return `<${tag} class="ag-b ${it.cls || ""}${s2}" style="${pos};height:${((it.b - it.a) * PPM - 2).toFixed(1)}px;${it.color ? `background-color:${it.color}` : ""}" title="${esc(it.label)} · ${hmOf(it.a)} – ${hmOf(it.b)}"><b>${esc(it.label)}</b>${(it.b - it.a) * PPM > 30 ? `<span>${hmOf(it.a)} – ${hmOf(it.b)}</span>` : ""}</${tag.split(" ")[0]}>`;
+  };
+  let html = `<div class="ag-head"><div></div><div>Général</div><div>Artistes</div><div>Moments</div></div><div class="ag-body" style="height:${H}px"><div class="ag-hours">`;
+  for (let v = lo + 60; v < hi; v += 60) html += `<span class="ag-hour" style="top:${y(v)}">${String(Math.floor(v / 60) % 24).padStart(2, "0")}h</span>`;
+  html += `</div>`;
+  cols.forEach(c => { html += `<div class="ag-col">` + layout(c).map(itemHtml).join("") + `</div>`; });
+  html += `<div class="ag-layer">`;
+  if (t.ouverture != null) { const z = t.fermPublic ?? t.fermPortes; if (z != null && z > t.ouverture) html += `<div class="zone" style="top:${y(t.ouverture)};height:${((z - t.ouverture) * PPM).toFixed(1)}px"></div>`; }
+  for (let v = lo + 30; v < hi; v += 30) html += `<i class="${v % 60 ? "half" : ""}" style="top:${y(v)}"></i>`;
+  html += `</div>`;
+  doors.forEach(([k, lab]) => html += `<div class="ag-door${k === "fermPortes" ? " dash" : ""}" style="top:${y(t[k])}"><button type="button" data-edit="door:${k}" class="${sel === "door:" + k ? "sel" : ""}">${lab} ${hmOf(t[k])}</button></div>`);
+  box.innerHTML = html + `</div>`;
+}
+
 function drawFrise() {
   applyView();
   drawConductor(localDoc());
+  drawAgenda(localDoc());
   if (getView() === "cond" && drawFrise.sel) { drawEditor(); }
   const box = $("#frise"); if (!box) return;
   const doc = localDoc(); const P = planning(doc); const t = P.t;
