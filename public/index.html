@@ -388,21 +388,27 @@ function blankEvent() {
   const contacts = {};
   [1, 2, 3, 4].forEach(i => contacts["c" + i] = { nom: "", fonction: "", tel: "", mail: "" });
   return { numero: "", nom: "", date: "", artistes: "", rider: "", riderFile: null, lineup: {},
-    h: { montageDebut: "", montageFin: "", soundcheckDebut: "", soundcheckFin: "", ouverture: "", duree: "", fermPublic: "", fermPortes: "", demontageDebut: "", demontageFin: "" },
+    h: { montageDebut: "", montageFin: "", ouverture: "", duree: "", fermPublic: "", fermPortes: "", demontageDebut: "", demontageFin: "" },
     loc, contacts, commentaires: "", createdAt: Date.now(), updatedAt: Date.now(), updatedBy: me || "" };
 }
 
 // Artists of a fiche, sorted by set time (sets after midnight count as late).
 const TYPES = ["Groupe", ["DJ", ["DJ CDJ", "DJ vinyle", "DJ CDJ + vinyle", "DJ"]], "Live", "Autre"];
-// The working day starts at the first general time (montage…); anything more than 3h earlier is after midnight.
-function mainTimes(e) {
+// The working day starts with the montage (or the doors if there is no montage time).
+// Any time more than 3h before that start is read as after midnight.
+const MAIN_KEYS = ["montageDebut", "montageFin", "ouverture", "fermPublic", "fermPortes", "demontageDebut", "demontageFin"];
+function dayStartOf(e) {
   const h = (e && e.h) || {};
-  const order = ["montageDebut", "montageFin", "soundcheckDebut", "soundcheckFin", "ouverture", "fermPublic", "fermPortes", "demontageDebut", "demontageFin"];
-  const t = {}; let prev = null, plus = 0;
-  order.forEach(k => { let v = mins(h[k]); if (v == null) return; v += plus; if (prev != null && v < prev - 60) { plus += 1440; v += 1440; } t[k] = v; prev = v; });
+  return mins(h.montageDebut) ?? mins(h.ouverture) ?? mins(h.demontageDebut) ?? 480;
+}
+function relOf(e) { const start = dayStartOf(e); return x => (x == null ? null : x < start - 180 ? x + 1440 : x); }
+function mainTimes(e) {
+  const h = (e && e.h) || {}, rel = relOf(e), t = {};
+  MAIN_KEYS.forEach(k => { const v = rel(mins(h[k])); if (v != null) t[k] = v; });
+  if (t.montageFin != null && t.montageDebut != null && t.montageFin <= t.montageDebut) t.montageFin += 1440;
+  if (t.demontageFin != null && t.demontageDebut != null && t.demontageFin <= t.demontageDebut) t.demontageFin += 1440;
   return t;
 }
-function relOf(e) { const v = Object.values(mainTimes(e)); const start = v.length ? Math.min(...v) : 480; return x => (x == null ? null : x < start - 180 ? x + 1440 : x); }
 function artMins(t, rel) { return rel(mins(t)); }
 function lineupOf(e) {
   let list;
@@ -676,7 +682,6 @@ function renderSheet(id) {
         <div class="horaires">
           <div class="fields">
             ${slot("Montage", "--seg-montage", "montageDebut", "montageFin")}
-            ${slot("Soundcheck", "--seg-sound", "soundcheckDebut", "soundcheckFin")}
             ${slot("Démontage", "--seg-demo", "demontageDebut", "demontageFin")}
           </div>
           <div class="fields">
@@ -1107,7 +1112,7 @@ function conductorItems(d) {
   const P = planning(d), t = P.t, out = [];
   const types = Object.fromEntries(lineupOf(d).map(a => [a.id, a.type || ""]));
   const add = (o) => out.push(o);
-  [["montage", "Montage", "--seg-montage", "montageDebut", "montageFin"], ["soundcheck", "Soundcheck", "--seg-sound", "soundcheckDebut", "soundcheckFin"], ["demontage", "Démontage", "--seg-demo", "demontageDebut", "demontageFin"]]
+  [["montage", "Montage", "--seg-montage", "montageDebut", "montageFin"], ["demontage", "Démontage", "--seg-demo", "demontageDebut", "demontageFin"]]
     .forEach(([k, lab, c, x, y]) => { if (t[x] != null) add({ a: t[x], b: t[y] ?? null, label: lab, kind: "main", w: 1, key: "main:" + k, color: (d.colors || {})[k] || `var(${c})` }); });
   if (P.sets.length) add({ a: Math.min(...P.sets.map(x => x.a)), b: Math.max(...P.sets.map(x => x.b)), label: "Show", kind: "show", w: 2, color: "var(--seg-show)" });
   [["ouverture", "Ouverture des portes"], ["fermPublic", "Fermeture au public"], ["fermPortes", "Fermeture des portes"]].forEach(([k, lab]) => { if (t[k] != null) add({ a: t[k], b: null, label: lab, kind: "door", w: 0, key: "door:" + k }); });
@@ -1142,7 +1147,7 @@ function drawAgenda(d) {
   const artColor = i => `var(${i % 2 ? "--art-b" : "--art-a"})`;
   const cols = [[], [], []];
   const custom = d.colors || {};
-  [["montage", "Montage", "--seg-montage", "montageDebut", "montageFin"], ["soundcheck", "Soundcheck", "--seg-sound", "soundcheckDebut", "soundcheckFin"], ["demontage", "Démontage", "--seg-demo", "demontageDebut", "demontageFin"]]
+  [["montage", "Montage", "--seg-montage", "montageDebut", "montageFin"], ["demontage", "Démontage", "--seg-demo", "demontageDebut", "demontageFin"]]
     .forEach(([k, lab, c, x, y]) => { if (t[x] != null && t[y] != null && t[y] > t[x]) cols[0].push({ a: t[x], b: t[y], label: lab, key: "main:" + k, color: custom[k] || `var(${c})`, cls: custom[k] ? "custom" : "" }); });
   if (P.sets.length) cols[0].push({ a: Math.min(...P.sets.map(x => x.a)), b: Math.max(...P.sets.map(x => x.b)), label: "Show", color: "var(--seg-show)", cls: "derived" });
   else if (t.ouverture != null && (t.fermPublic ?? t.fermPortes) != null) cols[0].push({ a: t.ouverture, b: t.fermPublic ?? t.fermPortes, label: "Show (prévu)", key: "main:show", cls: "planned" });
@@ -1200,7 +1205,6 @@ function drawFrise() {
   const seg = (key, label, cls, a, b, style) => `<button type="button" class="seg ${cls}${sel === key ? " sel" : ""}" data-edit="${key}" style="left:${pct(a)};width:calc(${pct(b)} - ${pct(a)});${style}" title="${esc(label)} · ${hm(a)} – ${hm(b)}">${esc(label)}</button>`;
   const main = [
     ["main:montage", "Montage", "--seg-montage", t.montageDebut, t.montageFin],
-    ["main:soundcheck", "Soundcheck", "--seg-sound", t.soundcheckDebut, t.soundcheckFin],
     ["main:demontage", "Démontage", "--seg-demo", t.demontageDebut, t.demontageFin],
   ].filter(x => x[3] != null && x[4] != null && x[4] > x[3]);
 
@@ -1310,7 +1314,7 @@ function editorSpec(key, d) {
   if (!key) return null;
   const [kind, id] = key.split(":");
   const two = (title, p1, p2, l1 = "Début", l2 = "Fin") => ({ title, fields: [[l1, p1], [l2, p2]] });
-  const MAIN = { montage: two("Montage", "h.montageDebut", "h.montageFin"), soundcheck: two("Soundcheck", "h.soundcheckDebut", "h.soundcheckFin"),
+  const MAIN = { montage: two("Montage", "h.montageDebut", "h.montageFin"), 
     show: two("Show", "h.ouverture", "h.fermPublic", "Ouverture des portes", "Fermeture au public"), demontage: two("Démontage", "h.demontageDebut", "h.demontageFin") };
   const DOORS = { ouverture: "Ouverture des portes", fermPublic: "Fermeture au public", fermPortes: "Fermeture des portes" };
   const a = ["set", "bal", "arr"].includes(kind) ? get(d, "lineup." + id) : null;
@@ -1459,7 +1463,7 @@ async function exportDocx(id) {
     const v = {
       NUM: e.numero || "000", NOM: e.nom || "", DATE: e.date ? "(" + fmtDate(e.date, true) + ")" : "",
       ARTISTES_INLINE: art, PAD: "      ", ARTISTES_BELOW: "",
-      montage: range(h.montageDebut, h.montageFin), soundcheck: range(h.soundcheckDebut, h.soundcheckFin), show: "",
+      montage: range(h.montageDebut, h.montageFin), soundcheck: (bs => bs.length ? `${hmOf(Math.min(...bs.map(x => x.a)))} – ${hmOf(Math.max(...bs.map(x => x.b)))} (balances)` : "")(planning(e).bals), show: "",
       ouverture: fmtTime(h.ouverture), duree: (h.duree || fmtDur(showMins(e))) ? ": " + (h.duree || fmtDur(showMins(e))) : "", fermPublic: h.fermPublic ? ": " + fmtTime(h.fermPublic) : "", fermPortes: h.fermPortes ? ": " + fmtTime(h.fermPortes) : "",
       demontage: range(h.demontageDebut, h.demontageFin), commentaires: (momTxt ? "\nMoments de la journée :\n" + momTxt + "\n" : "") + (e.commentaires ? "\n" + e.commentaires : ""),
       autreLabel: get(e, "loc.autre.label") || "",
