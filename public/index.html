@@ -192,6 +192,32 @@ textarea { resize: vertical; min-height: 120px; line-height: 1.5; }
 .tip b { display: block; font-weight: 600; }
 .tip span { display: block; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .tip em { display: block; font-style: normal; opacity: .75; }
+.jj { display: grid; gap: 18px; padding-block: 8px 40px; }
+.jj-top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.jj-top h1 { margin: 0; font: 700 clamp(18px, 2.4vw, 28px) var(--display); letter-spacing: .06em; text-transform: uppercase; }
+.jj-top small { display: block; color: var(--muted); font-size: 14px; margin-top: 2px; }
+.jj-clock { font: 500 clamp(36px, 6vw, 72px)/1 var(--mono); font-variant-numeric: tabular-nums; }
+.jj-card { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: clamp(16px, 3vw, 32px); position: relative; overflow: hidden; }
+.jj-k { font: 700 clamp(13px, 1.6vw, 18px) var(--display); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+.jj-k i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.jj-now .jj-name { font: 700 clamp(44px, 9vw, 128px)/1 var(--display); letter-spacing: .01em; text-transform: uppercase; margin: 10px 0 8px; overflow-wrap: anywhere; }
+.jj-now .jj-meta { font: 500 clamp(18px, 2.6vw, 34px) var(--body); }
+.jj-now .jj-meta b { font-family: var(--mono); font-weight: 600; }
+.jj-now .jj-also { margin-top: 10px; color: var(--muted); font-size: clamp(14px, 1.6vw, 18px); }
+.jj-bar { height: 10px; border-radius: 99px; background: var(--sunk); margin-top: 18px; overflow: hidden; }
+.jj-bar span { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.jj-now.warn .jj-bar span { background: var(--danger); }
+.jj-next .jj-name { font: 700 clamp(30px, 5.5vw, 72px)/1.05 var(--display); text-transform: uppercase; margin: 8px 0 6px; overflow-wrap: anywhere; }
+.jj-next .jj-meta { font-size: clamp(16px, 2.2vw, 28px); }
+.jj-next .jj-meta b { font-family: var(--mono); }
+.jj-next .jj-gap { display: inline-block; margin-left: 10px; padding: 2px 10px; border-radius: 99px; background: var(--bg); border: 1px solid var(--line); font: 500 clamp(13px, 1.6vw, 18px) var(--mono); }
+.jj-list { display: grid; gap: 0; }
+.jj-list div { display: grid; grid-template-columns: clamp(110px, 16vw, 190px) minmax(0, 1fr) auto; gap: 14px; padding: 10px 4px; border-top: 1px solid var(--line); font-size: clamp(15px, 2vw, 22px); align-items: baseline; }
+.jj-list div:first-child { border-top: 0; }
+.jj-list .t { font-family: var(--mono); color: var(--muted); }
+.jj-list .in { color: var(--muted); font-size: .8em; font-family: var(--mono); }
+.jj-list .door { color: var(--danger); text-transform: uppercase; letter-spacing: .04em; font-weight: 600; }
+.jj-empty { font-size: clamp(18px, 2.6vw, 30px); color: var(--muted); }
 .viewbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
 .viewsw { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--bg); }
 .viewsw button { border: 0; background: transparent; padding: 5px 14px; cursor: pointer; font: 600 13px var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
@@ -575,6 +601,13 @@ function go(id) { location.hash = id ? "fiche-" + id : ""; if (!id && location.h
 
 // ---------- render ----------
 function render(fromSnap) {
+  const jj = location.hash.match(/^#jourj-([A-Za-z0-9_-]+)$/);
+  if (jj) {
+    if (!loaded) return;
+    if (!events.has(jj[1])) { if (render.tried !== jj[1]) { render.tried = jj[1]; refresh(); } return; }
+    current = null; renderJourJ(jj[1]); return;
+  }
+  stopJourJ();
   const id = route();
   if (id) {
     if (!loaded) return;
@@ -585,6 +618,72 @@ function render(fromSnap) {
   }
   current = null;
   renderList();
+}
+
+// ---------- Jour J: control-room screen ----------
+let jjTimer = null, jjLock = null;
+function stopJourJ() {
+  if (jjTimer) { clearInterval(jjTimer); jjTimer = null; }
+  if (jjLock) { try { jjLock.release(); } catch (e) {} jjLock = null; }
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && jjTimer) keepAwake(); });
+async function keepAwake() { try { if (navigator.wakeLock && !jjLock) { jjLock = await navigator.wakeLock.request("screen"); jjLock.addEventListener("release", () => { jjLock = null; }); } } catch (e) {} }
+// Minutes since midnight of the event day (so 01:30 the next night is 1530), or today's clock with the day rule.
+function nowMinFor(d) {
+  const now = new Date();
+  if (d.date) { const base = new Date(d.date + "T00:00:00"); if (!isNaN(base)) return Math.floor((now - base) / 60000); }
+  return relOf(d)(now.getHours() * 60 + now.getMinutes());
+}
+function fmtIn(m) {
+  if (m < 1) return "maintenant";
+  if (m < 60) return `${Math.round(m)} min`;
+  if (m < 1440) { const h = Math.floor(m / 60), r = Math.round(m % 60); return `${h}h${r ? String(r).padStart(2, "0") : ""}`; }
+  const dd = Math.floor(m / 1440); return `${dd} jour${dd > 1 ? "s" : ""}`;
+}
+function renderJourJ(id) {
+  const d = clone(events.get(id));
+  if (!jjTimer) { jjTimer = setInterval(() => { if (location.hash === "#jourj-" + id) renderJourJ(id); }, 10000); keepAwake(); }
+  $("#savestate").textContent = "";
+  renderTop(`<button class="btn" id="jj-full" type="button">Plein écran</button><button class="btn" id="jj-back" type="button">Retour à la fiche</button>`);
+  $("#jj-back").onclick = () => { location.hash = "fiche-" + id; };
+  $("#jj-full").onclick = () => { const el = document.documentElement; (el.requestFullscreen ? el.requestFullscreen() : Promise.reject()).catch(() => toast("Le plein écran n'est pas disponible sur cet appareil.")); };
+  const now = nowMinFor(d), clock = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const items = conductorItems(d).filter(x => x.kind !== "gap" && x.kind !== "show");
+  const PRI = { set: 0, bal: 1, mom: 2, main: 3, arr: 4, door: 5 };
+  const curAll = items.filter(x => x.b != null && x.a <= now && now < x.b).sort((x, y) => PRI[x.kind] - PRI[y.kind]);
+  const cur = curAll[0] || null;
+  const upcoming = items.filter(x => x.a > now).sort((x, y) => x.a - y.a || ((x.kind === "door" ? -1 : PRI[x.kind]) - (y.kind === "door" ? -1 : PRI[y.kind])));
+  let next = upcoming[0] || null;
+  if (cur && cur.kind === "set") next = upcoming.find(x => x.kind === "set") || next;
+  const following = upcoming.filter(x => x !== next).slice(0, 4);
+  const label = x => x.kind === "door" ? x.label : x.label + (x.sub ? " · " + x.sub : "");
+  const slot = x => x.b != null ? `${hmOf(x.a)} – ${hmOf(x.b)}` : hmOf(x.a);
+  let html = `<div class="jj"><div class="jj-top"><div><h1>${esc(d.nom || "Événement")}</h1><small>${esc(d.date ? fmtDate(d.date, true) : "Date non renseignée")}${d.numero ? " · projet " + esc(d.numero) : ""}</small></div><div class="jj-clock">${clock}</div></div>`;
+  if (!items.length) {
+    html += `<div class="jj-card"><div class="jj-empty">Aucun horaire sur cette fiche. Renseigne le line-up, les portes et les moments pour suivre la journée ici.</div></div>`;
+  } else {
+    if (cur) {
+      const left = cur.b - now, pct = Math.min(100, Math.max(0, (now - cur.a) / (cur.b - cur.a) * 100));
+      html += `<div class="jj-card jj-now${left <= 5 ? " warn" : ""}"><div class="jj-k"><i style="background:${cur.color || "var(--accent)"}"></i>Maintenant</div>
+        <div class="jj-name">${esc(cur.label)}</div>
+        <div class="jj-meta">${cur.sub ? esc(cur.sub) + " · " : ""}${slot(cur)} · fin dans <b>${fmtIn(left)}</b></div>
+        ${curAll.length > 1 ? `<div class="jj-also">En même temps : ${curAll.slice(1).map(x => esc(label(x)) + " (jusqu'à " + hmOf(x.b) + ")").join(" · ")}</div>` : ""}
+        <div class="jj-bar"><span style="width:${pct.toFixed(1)}%"></span></div></div>`;
+    } else if (next) {
+      html += `<div class="jj-card jj-now"><div class="jj-k">Maintenant</div><div class="jj-name" style="font-size:clamp(32px,6vw,80px)">${upcoming.length === items.length ? "Avant le début" : "Pause"}</div>
+        <div class="jj-meta">Prochain élément dans <b>${fmtIn(next.a - now)}</b></div></div>`;
+    } else {
+      html += `<div class="jj-card jj-now"><div class="jj-k">Maintenant</div><div class="jj-name" style="font-size:clamp(32px,6vw,80px)">Journée terminée</div></div>`;
+    }
+    if (next) {
+      const gap = cur && cur.kind === "set" && next.kind === "set" ? next.a - cur.b : null;
+      html += `<div class="jj-card jj-next"><div class="jj-k"><i style="background:${next.color || "var(--danger)"}"></i>Ensuite</div>
+        <div class="jj-name">${esc(next.label)}</div>
+        <div class="jj-meta">${next.sub ? esc(next.sub) + " · " : ""}à <b>${hmOf(next.a)}</b>${next.b != null ? " – " + hmOf(next.b) : ""} · dans ${fmtIn(next.a - now)}${gap != null ? `<span class="jj-gap">${gap > 0 ? fmtDur(gap) + " de changement" : gap === 0 ? "enchaînement direct" : "⚠ chevauchement"}</span>` : ""}</div></div>`;
+    }
+    if (following.length) html += `<div class="jj-card"><div class="jj-k" style="margin-bottom:6px">Puis</div><div class="jj-list">${following.map(x => `<div><span class="t">${slot(x)}</span><span class="${x.kind === "door" ? "door" : ""}">${esc(label(x))}</span><span class="in">dans ${fmtIn(x.a - now)}</span></div>`).join("")}</div></div>`;
+  }
+  app.innerHTML = html + `</div>`;
 }
 
 function renderTop(html) { $("#topactions").innerHTML = html; }
@@ -709,6 +808,7 @@ function renderSheet(id) {
           <div class="viewsw" role="group" aria-label="Affichage de la journée"><button type="button" data-view="frise">Frise</button><button type="button" data-view="agenda">Agenda</button><button type="button" data-view="cond">Conducteur</button></div>
           <span class="sp"></span>
           <button type="button" class="btn" id="export-cond" hidden>Exporter le conducteur (Word)</button>
+          <button type="button" class="btn" data-jourj>Écran Jour J</button>
         </div>
         <div class="frise" id="frise"></div>
         <div class="agenda" id="agenda" hidden></div>
@@ -757,6 +857,7 @@ function renderSheet(id) {
     if (ev.target.closest("[data-close-edit]")) { drawFrise.sel = null; drawFrise(); return; }
     const vb = ev.target.closest("[data-view]"); if (vb) { setView(vb.dataset.view); return; }
     if (ev.target.closest("#export-cond")) { exportConductor(); return; }
+    if (ev.target.closest("[data-jourj]")) { flush(); location.hash = "jourj-" + current; return; }
     const sw = ev.target.closest("[data-color]");
     if (sw && canWrite) { const [p, c] = sw.dataset.color.split("|"); edit(p, c); flush(); drawFrise(); return; }
     const ds = ev.target.closest("[data-del-slot]");
